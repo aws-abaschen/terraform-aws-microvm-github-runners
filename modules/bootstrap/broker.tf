@@ -3,10 +3,11 @@
 
 resource "aws_secretsmanager_secret" "app" {
   # checkov:skip=CKV2_AWS_57:GitHub App keys are rotated in GitHub; see the rotation runbook.
-  name        = "${local.prefix}/platform/github-app"
-  description = "GitHub App credentials {app_id, private_key}. Set the value out of band; it never enters Terraform state."
-  kms_key_id  = aws_kms_key.this.arn
-  tags        = local.tags
+  name                    = "${local.prefix}/platform/github-app"
+  description             = "GitHub App credentials {app_id, private_key}. Set the value out of band; it never enters Terraform state."
+  kms_key_id              = aws_kms_key.this.arn
+  recovery_window_in_days = var.secret_recovery_window_days
+  tags                    = local.tags
 }
 
 data "aws_iam_policy_document" "app_secret" {

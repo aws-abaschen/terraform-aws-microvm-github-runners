@@ -38,7 +38,7 @@ vuln:
 # terraform validate every module and example
 tf-validate:
     for d in modules/* examples/*/ examples/consumer-repo/infra/runners; do \
-      [ -f "$d/versions.tf" ] || [ -f "$d/main.tf" ] || continue; \
+      [ -f "$d/versions.tf" ] || [ -f "$d/main.tf" ] || continue; [ "$d" = "examples/sandbox/" ] && continue; \
       echo "== $d"; terraform -chdir="$d" init -backend=false -input=false >/dev/null; terraform -chdir="$d" validate; \
     done
 
@@ -93,6 +93,24 @@ ping url secret_arn:
 drill-lost-webhooks queue_url:
     aws sqs purge-queue --queue-url "{{queue_url}}"
     @echo "Queue purged. Queued jobs must start within ~5 minutes via the sweeper. Record the result in your test log."
+
+# ---------------------------------------------------------------- Sandbox (single account, throw-away)
+
+sandbox := "examples/sandbox"
+
+# Deploy the sandbox: VPC + NAT, bootstrap, image and one repository (≈ $1–2/day; run sandbox-down after)
+sandbox-up repository region="eu-central-1" oidc="true": package (image-artifact "arm64")
+    terraform -chdir={{sandbox}} init -input=false
+    terraform -chdir={{sandbox}} apply -input=false -auto-approve -var repository={{repository}} -var region={{region}} -var create_github_oidc_provider={{oidc}} -target=module.bootstrap
+    terraform -chdir={{sandbox}} apply -input=false -auto-approve -var repository={{repository}} -var region={{region}} -var create_github_oidc_provider={{oidc}}
+
+# Launch one MicroVM like the dispatcher does and verify start, role, KMS, VPC path and terminate
+sandbox-smoke region="eu-central-1":
+    terraform -chdir={{sandbox}} output -json smoke | go run ./cmd/smoke -region {{region}}
+
+# Destroy everything the sandbox created
+sandbox-down repository region="eu-central-1" oidc="true":
+    terraform -chdir={{sandbox}} destroy -input=false -auto-approve -var repository={{repository}} -var region={{region}} -var create_github_oidc_provider={{oidc}}
 
 # Serve the documentation site locally
 docs port="8000":

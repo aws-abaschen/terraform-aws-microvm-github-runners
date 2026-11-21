@@ -138,3 +138,15 @@ variable "code_signing_config_arn" {
   type        = string
   default     = null
 }
+
+variable "force_destroy" {
+  description = "Allow destroying the artifact and state buckets with content. Sandboxes only."
+  type        = bool
+  default     = false
+}
+
+variable "secret_recovery_window_days" {
+  description = "Recovery window of the GitHub App secret. 0 deletes immediately (sandboxes only)."
+  type        = number
+  default     = 30
+}

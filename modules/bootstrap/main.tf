@@ -91,7 +91,7 @@ resource "aws_s3_bucket" "this" {
   # checkov:skip=CKV2_AWS_62:No consumer for bucket events.
   for_each      = toset(["artifacts", "tfstate"])
   bucket        = "${local.prefix}-${each.key}-${local.account}-${local.region}"
-  force_destroy = false
+  force_destroy = var.force_destroy
   tags          = merge(local.tags, { purpose = each.key })
 }
 

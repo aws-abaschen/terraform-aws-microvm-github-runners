@@ -27,6 +27,14 @@ just image-artifact   # dist/image-arm64.zip (runner SHA-256 verified)
 just release-assets   # all assets + SHA256SUMS
 ```
 
+Try it in a single throw-away account (VPC + NAT stand in for the landing zone, ≈ $1–2/day):
+
+```sh
+just sandbox-up owner/test-repo eu-central-1 false   # false: account already has the GitHub OIDC provider
+just sandbox-smoke eu-central-1                       # one MicroVM, no GitHub needed
+just sandbox-down owner/test-repo eu-central-1 false
+```
+
 Consumers use release assets: they verify `SHA256SUMS` and the build provenance with `gh attestation verify` before `terraform apply`.
 
 ## Requirements

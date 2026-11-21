@@ -136,3 +136,9 @@ variable "tags" {
   type    = map(string)
   default = {}
 }
+
+variable "secret_recovery_window_days" {
+  description = "Recovery window of the webhook secret. 0 deletes immediately (sandboxes only)."
+  type        = number
+  default     = 7
+}
