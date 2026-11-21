@@ -189,8 +189,8 @@ data "aws_iam_policy_document" "this" {
       "iam:GetPolicy*", "iam:ListPolicyVersions",
       "ssm:DescribeParameters", "secretsmanager:GetRandomPassword", "logs:DescribeLogGroups", "logs:ListTagsForResource",
       "cloudwatch:PutMetricData", "cloudwatch:DescribeAlarms", "xray:PutT*", "sts:GetCallerIdentity",
-      "ec2:CreateNetworkInterface", "ec2:DeleteNetworkInterface", "ec2:DescribeNetworkInterfaces", "ec2:*PrivateIpAddresses", # VPC Lambdas
-      "ec2:DescribeSubnets", "ec2:DescribeSecurityGroups", "ec2:DescribeVpcs",
+      "ec2:CreateNetworkInterface", "ec2:DeleteNetworkInterface", "ec2:*PrivateIpAddresses", # VPC Lambdas
+      "ec2:Describe*",                                                                       # read-only; one wildcard keeps the boundary under 6,144 characters
     ]
     resources = ["*"]
   }
@@ -204,6 +204,20 @@ data "aws_iam_policy_document" "this" {
   }
 
   # Guard rails that hold even if an allow above is widened later.
+  # The gha-repo-id tag only counts on a role named for that id: retagging a
+  # role (for example deploy-B with A's id) grants it nothing, even without the
+  # organisation SCP.
+  statement {
+    sid       = "TagMatchesName"
+    effect    = "Deny"
+    actions   = ["*"]
+    resources = ["*"]
+    condition {
+      test     = "ArnNotLike"
+      variable = "aws:PrincipalArn"
+      values   = ["${local.arn.iam}:role/${local.base}-*", "${local.arn.iam}:role/${local.prefix}-deploy-${local.id}"]
+    }
+  }
   statement {
     sid       = "NoBoundaryEscape"
     effect    = "Deny"

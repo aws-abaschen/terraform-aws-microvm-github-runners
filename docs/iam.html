@@ -24,7 +24,7 @@
   <h2><small>IAM design</small>Policies and guardrails that scale with the number of repositories</h2>
   <p class="lead">Design rule: nothing in IAM policies, SCPs, RCPs, key policies or platform configuration grows with the number of repositories. A repository costs a fixed set of roles and resources. Once an account's quotas are reached, you add another account (a cell), not a bigger policy.</p>
   <span class="tag">Phase 1 implemented · 2026-11-21</span>
-  <p>Status: the generic boundary, the registry and <code>org-guardrails</code> are implemented. The boundary is 5,780 characters whatever the number of repositories. IAM Access Analyzer validates the boundary, the SCP and the RCP, and 41 <code>SimulateCustomPolicy</code> cases confirm that repository A gets its own resources and is denied B's and the platform's. They have not yet run in a deployed account. The tagger (phase 2) is not built yet.</p>
+  <p>Status: the generic boundary, the registry and <code>org-guardrails</code> are implemented. The boundary is 5,976 characters whatever the number of repositories. IAM Access Analyzer validates the boundary, the SCP and the RCP with no findings. 45 <code>SimulateCustomPolicy</code> cases confirm that repository A gets its own resources and is denied B's and the platform's, including when a role named for B carries A's tags. They have not yet run in a deployed account. The tagger (phase 2) is not built yet.</p>
 </section>
 
 <section>
@@ -58,7 +58,7 @@ arn:aws:s3:::gha-microvm-artifacts-&lt;account&gt;-&lt;region&gt;/${aws:Principa
   </ul>
   <p>Resource tags are still used for three things:</p>
   <ul>
-    <li>creates whose resource is <code>*</code> (<code>lambda:CreateMicrovmImage</code>, EC2 network interfaces): <code>aws:RequestTag/gha-repo-id</code> must equal the caller's tag</li>
+    <li>creates whose resource is <code>*</code> (<code>lambda:CreateMicrovmImage</code>): <code>aws:RequestTag/gha-repo-id</code> must equal the caller's tag. Network interfaces stay unscoped, because Lambda creates them and their requests carry no tag.</li>
     <li>opt-in sharing: a secret or parameter tagged <code>gha-repo-id=&lt;id&gt;</code> becomes readable by that repository's jobs, without any policy change</li>
     <li>a second layer in the RCP, described below</li>
   </ul>
@@ -91,6 +91,7 @@ arn:aws:s3:::gha-microvm-artifacts-&lt;account&gt;-&lt;region&gt;/${aws:Principa
     <tr><td>Artifacts and state</td><td>S3 prefix <code>${gha-repo-id}/</code></td></tr>
     <tr><td>Role creation</td><td>Boundary must be <code>&lt;prefix&gt;-boundary</code>. Request tags must equal the caller's.</td></tr>
     <tr><td>Extra job actions</td><td><code>additional_job_actions</code> on <code>bootstrap</code>, the same for the whole account</td></tr>
+    <tr><td>Tag bound to the role name</td><td>A Deny on everything unless <code>aws:PrincipalArn</code> is <code>role/&lt;prefix&gt;-${gha-repo-id}-*</code> or <code>role/&lt;prefix&gt;-deploy-${gha-repo-id}</code>. If someone retags a role (for example <code>deploy-B</code> with A's id), it gets nothing, even without the SCP. <code>gha-repo</code> can't be tied to a name. It only widens reads of <code>gha/&lt;repo&gt;/*</code>, and the SCP is what protects it. Phase 2's shared deploy role needs an exception to this rule.</td></tr>
     <tr><td>Explicit denies</td><td>Leaving the boundary, policy versions, users and access keys, the App secret, MicroVM shell and auth tokens, and changing <code>gha-*</code> tags to another value</td></tr>
   </table>
 </section>
