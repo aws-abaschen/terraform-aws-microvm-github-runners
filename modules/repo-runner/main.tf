@@ -33,7 +33,7 @@ data "aws_ssm_parameter" "registry" {
   lifecycle {
     postcondition {
       condition     = nonsensitive(jsondecode(self.value).repository) == local.repo
-      error_message = "The registry entry ${local.platform.registry_path}/${local.id} belongs to another repository."
+      error_message = "The registry entry of id ${local.id} belongs to another repository (hash prefix collision)."
     }
   }
 }
