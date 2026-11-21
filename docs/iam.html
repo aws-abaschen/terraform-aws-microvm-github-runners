@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IAM design · MicroVM GitHub Runners</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="index.html">MicroVM GitHub Runners</a>
+  <div class="links">
+    <a href="index.html">Overview</a>
+    <a href="security.html">Security</a>
+    <a class="active" href="iam.html">IAM design</a>
+    <a href="operations.html">Operations</a>
+    <a href="dora.html">DORA</a>
+    <a href="https://github.com/aws-abaschen/terraform-aws-microvm-github-runners">GitHub</a>
+  </div>
+</div>
+<main>
+
+<section>
+  <h2><small>IAM design</small>Policies and guardrails that scale with the number of repositories</h2>
+  <p class="lead">Design rule: nothing in IAM policies, SCPs, RCPs, key policies or platform configuration grows with the number of repositories. A repository costs a fixed set of roles and resources. Once an account's quotas are reached, you add another account (a cell), not a bigger policy.</p>
+  <span class="tag">Design · 2026-11-21</span>
+</section>
+
+<section>
+  <h2><small>Today</small>What grows with each repository</h2>
+  <table>
+    <tr><th>Item</th><th>Limit it hits</th><th>Replaced by</th></tr>
+    <tr><td>One managed boundary policy per repository</td><td>1,500 customer managed policies per account by default (10,000 at most)</td><td>One generic boundary per account</td></tr>
+    <tr><td>Boundary size grows with <code>job_parameter_paths</code>, <code>job_secret_prefixes</code> and <code>additional_job_actions</code></td><td>6,144 characters per managed policy; already at 5,768 with defaults</td><td>Fixed-size policy built with policy variables. Extra secrets and parameters are shared by tagging them (opt-in). Extra job actions are set once per account.</td></tr>
+    <tr><td><code>boundaries</code> map in <code>/&lt;prefix&gt;/platform/config</code></td><td>4 KB for a Standard SSM parameter (about 40 repositories)</td><td>One <code>boundary_arn</code> value</td></tr>
+    <tr><td><code>ALLOWED_REPOSITORIES</code> in the broker's environment</td><td>4 KB of Lambda environment variables</td><td>Registry: one SSM parameter per repository, <code>/&lt;prefix&gt;/registry/&lt;id&gt;</code></td></tr>
+    <tr><td><code>check "repository_onboarded"</code> and <code>boundaries[repo]</code> in <code>repo-runner</code> and <code>runner-image</code></td><td>Grows with the map above</td><td>Reading the repository's registry parameter, which fails if the repository isn't onboarded</td></tr>
+    <tr><td>A per-repository deploy role and an apply of <code>bootstrap</code> for every onboarding</td><td>Role quota, and a platform-team change for each repository</td><td>Phase 2: one shared deploy role, reached through a tagging broker (the tagger) that sets session tags. Onboarding then only writes a registry entry.</td></tr>
+    <tr><td>Reserved concurrency of 26 per repository (webhook 20, dispatcher 5, sweeper 1)</td><td>1,000 concurrent executions per account by default, and at least 100 must stay unreserved: about 34 repositories</td><td>No reservation by default. A per-repository cap stays available as an option. Not an IAM item, but it is the first limit you would hit.</td></tr>
+    <tr><td>5 roles per repository (deploy, webhook, control, runner, image build)</td><td>1,000 roles per account by default, 10,000 at most: 200 or 2,000 repositories</td><td>Kept: these roles isolate repositories. Go past this with more accounts (cells).</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2><small>Recommendation</small>Principal-tag ABAC, with the tag used inside resource ARNs</h2>
+  <p>Every repository principal carries two tags: <code>gha-repo-id</code> (<code>sha256(lower(owner/repo))[:10]</code>) and <code>gha-repo</code> (<code>owner/repo</code> in lower case). The generic policy grants permissions on ARNs built from those tags with policy variables:</p>
+<pre>arn:aws:lambda:&lt;region&gt;:&lt;account&gt;:function:gha-microvm-${aws:PrincipalTag/gha-repo-id}-*
+arn:aws:ssm:&lt;region&gt;:&lt;account&gt;:parameter/gha-microvm/${aws:PrincipalTag/gha-repo-id}/*
+arn:aws:secretsmanager:&lt;region&gt;:&lt;account&gt;:secret:gha/${aws:PrincipalTag/gha-repo}/*
+arn:aws:s3:::gha-microvm-artifacts-&lt;account&gt;-&lt;region&gt;/${aws:PrincipalTag/gha-repo-id}/*</pre>
+  <p>Why this rather than plain resource-tag ABAC (<code>aws:ResourceTag</code> equal to <code>aws:PrincipalTag</code> on every statement):</p>
+  <ul>
+    <li><strong>It works for every action that has a resource ARN.</strong> Some actions here have no <code>aws:ResourceTag</code> condition key, such as log stream writes, S3 objects and parts of the new Lambda MicroVMs API. A resource ARN always works.</li>
+    <li><strong>Names can't change, tags can.</strong> Anyone allowed to tag a resource could otherwise move it into another repository. With names, a tag change on a resource grants nothing.</li>
+    <li><strong>Creates work too.</strong> The name in the request is checked before the resource exists, with no dependence on tag-on-create support.</li>
+    <li><strong>It doesn't care where the tag comes from.</strong> A role tag and a session tag are both <code>aws:PrincipalTag</code>. The policy is the same in phase 1 and phase 2.</li>
+  </ul>
+  <p>Resource tags are still used for three things:</p>
+  <ul>
+    <li>creates whose resource is <code>*</code> (<code>lambda:CreateMicrovmImage</code>, EC2 network interfaces): <code>aws:RequestTag/gha-repo-id</code> must equal the caller's tag</li>
+    <li>opt-in sharing: a secret or parameter tagged <code>gha-repo-id=&lt;id&gt;</code> becomes readable by that repository's jobs, without any policy change</li>
+    <li>a second layer in the RCP, described below</li>
+  </ul>
+</section>
+
+<section>
+  <h2><small>Identities</small>Where the tags come from</h2>
+  <h3>Phase 1: role tags</h3>
+  <p><code>bootstrap</code> creates one deploy role per repository, trusted by GitHub OIDC for <code>repo:&lt;owner&gt;/&lt;repo&gt;:environment:&lt;env&gt;</code> and tagged with both keys. All other repository roles are created by that deploy role. The policy only allows <code>iam:CreateRole</code> when the request carries the caller's own <code>gha-repo-id</code> and <code>gha-repo</code> values and the generic boundary. A repository can therefore only create roles of its own.</p>
+  <h3>Phase 2: the tagger, with session tags</h3>
+  <p>A role with session tags would let one shared deploy role serve every repository. GitHub can't provide this on its own. <code>AssumeRoleWithWebIdentity</code> takes session tags only from a <code>https://aws.amazon.com/tags</code> claim in the JWT, and GitHub's OIDC tokens don't include it. A small platform function, the tagger, does it instead:</p>
+  <ol>
+    <li>The deploy workflow assumes a shared entry role through OIDC. Its trust is <code>repo:&lt;allowed-owner&gt;/*:environment:runners</code>, one line per GitHub organization. The entry role can only invoke the tagger.</li>
+    <li>The workflow sends a second GitHub OIDC token, with audience <code>gha-microvm-tagger</code>. The tagger checks the signature (GitHub JWKS), the issuer, the audience and the expiry, and rejects a reused <code>jti</code> (DynamoDB with a TTL). The <code>environment</code> claim must match the registry entry.</li>
+    <li>The tagger calls <code>sts:AssumeRole</code> on the shared deploy role with session tags <code>gha-repo-id</code> and <code>gha-repo</code>, <code>SourceIdentity=&lt;owner/repo&gt;@&lt;run_id&gt;</code> for CloudTrail, and at most one hour. It returns the credentials and never logs them.</li>
+    <li>The SCP denies <code>sts:TagSession</code> with <code>gha-*</code> keys to every principal except the tagger.</li>
+  </ol>
+  <p>After phase 2, onboarding a repository only means writing its registry parameter. Phase 2 needs the generic boundary first, so it comes as its own change.</p>
+</section>
+
+<section>
+  <h2><small>Generic boundary</small><code>&lt;prefix&gt;-boundary</code>, one per account</h2>
+  <p>The same document is the deploy role's identity policy and the permissions boundary of every repository role, as before. It doesn't change when repositories are added.</p>
+  <table>
+    <tr><th>Scope</th><th>How</th></tr>
+    <tr><td>Functions, queues, tables, schedules, alarms, roles, log groups</td><td>Names <code>&lt;prefix&gt;-${gha-repo-id}-*</code></td></tr>
+    <tr><td>MicroVM image and its VMs</td><td>ARN <code>microvm-image:&lt;prefix&gt;-${gha-repo-id}*</code>. Create needs <code>aws:RequestTag/gha-repo-id</code> equal to the caller's.</td></tr>
+    <tr><td>Platform-owned parameters and secrets</td><td><code>/&lt;prefix&gt;/${gha-repo-id}/*</code>, <code>&lt;prefix&gt;/${gha-repo-id}/*</code></td></tr>
+    <tr><td>Job secrets and parameters</td><td>By convention <code>gha/${gha-repo}/*</code> and <code>/gha/${gha-repo}/*</code>, or anything tagged <code>gha-repo-id=${gha-repo-id}</code></td></tr>
+    <tr><td>Artifacts and state</td><td>S3 prefix <code>${gha-repo-id}/</code></td></tr>
+    <tr><td>Role creation</td><td>Boundary must be <code>&lt;prefix&gt;-boundary</code>. Request tags must equal the caller's.</td></tr>
+    <tr><td>Extra job actions</td><td><code>additional_job_actions</code> on <code>bootstrap</code>, the same for the whole account</td></tr>
+    <tr><td>Explicit denies</td><td>Leaving the boundary, policy versions, users and access keys, the App secret, MicroVM shell and auth tokens, and changing <code>gha-*</code> tags to another value</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2><small>Organization guardrails</small>SCP, RCP and tag policy (module <code>org-guardrails</code>)</h2>
+  <p>Every policy is generic: it holds only the name prefix and a list of exempt administrator roles. It is the same for every account and every number of repositories. The platform team attaches it to the workload OU from the management account or a delegated administrator.</p>
+  <h3>SCP: makes the tags trustworthy</h3>
+  <ul>
+    <li><strong>DenyForeignRepoTags.</strong> A request that sets or removes <code>gha-repo-id</code> or <code>gha-repo</code> on any resource or principal is denied unless the value equals the caller's own tag. This covers create-with-tags, <code>TagResource</code>, <code>TagRole</code> and every <code>Untag*</code>. Exempt administrators are excluded. Without this rule, anyone who can tag could pass for a repository.</li>
+    <li><strong>DenyRepoSessionTags.</strong> <code>sts:TagSession</code> with a <code>gha-repo-id</code> tag is denied to everyone but the tagger role.</li>
+    <li><strong>DenyBoundaryEscape.</strong> Principals tagged <code>gha-repo-id</code> can only create roles, or set a boundary, with <code>&lt;prefix&gt;-boundary</code>. They can't delete a boundary, create policy versions, users or access keys.</li>
+    <li><strong>ProtectPlatform.</strong> Only exempt administrators can change the boundary policy and the platform roles: broker, deploy, tagger and connector operator.</li>
+    <li><strong>DenyMicrovmShell.</strong> MicroVM shell and auth tokens are denied across the organization, except for a break-glass role.</li>
+  </ul>
+  <h3>RCP: second layer on data</h3>
+  <p>The RCP denies access to resources tagged <code>gha-repo-id</code> when the caller carries a different <code>gha-repo-id</code>. It covers Secrets Manager, SQS, DynamoDB, CloudWatch Logs, CloudWatch and X-Ray, the RCP-supported services used here. Callers with no <code>gha-repo-id</code> tag are left out (<code>Null</code> check), so administrators and AWS services are unaffected. A job's extra identity policy (<code>additional_runner_policy_json</code>), even one granting <code>*</code>, then still can't read another repository's secrets or queues.</p>
+  <h3>Tag policy</h3>
+  <p>Fixes the spelling and case of <code>gha-repo-id</code> and <code>gha-repo</code> and reports resources that don't comply. Tag policies can't require a tag or check a value against a pattern. The SCP does both.</p>
+  <h3>Limits to know</h3>
+  <ul>
+    <li>SCPs and RCPs don't apply to the management account or to service-linked roles.</li>
+    <li>A deny on <code>StringNotEquals</code> also matches a caller that lacks the key. That is why each SCP rule has the list of exempt administrator roles (for example the AWS SSO administrator roles and the platform pipeline role).</li>
+    <li>For actions without <code>aws:ResourceTag</code>, the RCP doesn't apply. The identity layer, built on names, is the primary control, and the RCP is only the second one.</li>
+    <li>SCPs and RCPs are limited to 5,120 characters each, with up to 5 per target. The guardrails use one of each.</li>
+  </ul>
+</section>
+
+<section>
+  <h2><small>Scale</small>Size of one account (cell)</h2>
+  <table>
+    <tr><th>Quota</th><th>Per repository</th><th>Repositories per account</th></tr>
+    <tr><td>IAM roles (1,000 by default, 10,000 at most)</td><td>5 (4 after phase 2)</td><td>200 by default, 2,000 at most</td></tr>
+    <tr><td>Customer managed policies</td><td>0</td><td>No limit</td></tr>
+    <tr><td>Standard SSM parameters (10,000)</td><td>2 or 3 plus one per running job</td><td>Thousands</td></tr>
+    <tr><td>Lambda concurrency and MicroVM memory</td><td>Depends on load</td><td>Size per account; raise the quotas or add a cell</td></tr>
+  </table>
+  <p>Past one account, assign repositories to cells. Each cell is an account with its own <code>bootstrap</code>, and the same SCP and RCP apply to all of them. A repository's deploy workflow points at its cell's role. Nothing is shared between cells, so a failure stays inside one cell.</p>
+</section>
+
+<section>
+  <h2><small>Migration</small>Breaking changes before v0.1.0</h2>
+  <ul>
+    <li><code>repositories[*].job_secret_prefixes</code>, <code>job_parameter_paths</code> and <code>additional_job_actions</code> are removed. Use the <code>gha/&lt;owner&gt;/&lt;repo&gt;/</code> paths or tag a secret or parameter with <code>gha-repo-id</code>. Use <code>bootstrap.additional_job_actions</code> for the whole account.</li>
+    <li><code>repo-runner</code> loses <code>job_secret_prefixes</code> and <code>job_parameter_paths</code>, for the same reason.</li>
+    <li>The platform configuration has <code>boundary_arn</code> instead of <code>boundaries</code>. Run <code>bootstrap</code> first, then each repository.</li>
+    <li>The broker reads the registry instead of <code>ALLOWED_REPOSITORIES</code>.</li>
+  </ul>
+</section>
+
+</main>
+<footer>aws-abaschen · <a href="https://github.com/aws-abaschen/terraform-aws-microvm-github-runners">source</a></footer>
+</body>
+</html>
