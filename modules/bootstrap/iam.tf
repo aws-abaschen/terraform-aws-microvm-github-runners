@@ -10,10 +10,9 @@ locals {
   repo_tags         = { for repo, r in local.repos : repo => { "gha-repo" = repo, "gha-repo-id" = r.id } }
   deploy_repos      = var.per_repository_deploy_roles ? local.repos : {}
   repo_subjects = {
-    for repo, r in local.repos : repo => r.repository_id == null ? [
-      "repo:${repo}:environment:${r.environment}",
-      "repo:${split("/", repo)[0]}@*/${split("/", repo)[1]}@*:environment:${r.environment}",
-    ] : ["repo:${split("/", repo)[0]}@${r.owner_id}/${split("/", repo)[1]}@${r.repository_id}:environment:${r.environment}"]
+    for repo, r in local.repos : repo => r.repository_id == null
+    ? "repo:${repo}:environment:${r.environment}"
+    : "repo:${split("/", repo)[0]}@${r.owner_id}/${split("/", repo)[1]}@${r.repository_id}:environment:${r.environment}"
   }
 }
 
@@ -69,7 +68,7 @@ resource "aws_ssm_parameter" "registry" {
 # Phase 1: one deploy role per repository, tagged with it. Phase 2 replaces
 # them with the shared role of tagger.tf (per_repository_deploy_roles = false).
 data "aws_iam_policy_document" "deploy_trust" {
-  # checkov:skip=CKV_AWS_358:sub names one repository and environment; ids are wildcards only when not pinned.
+  # checkov:skip=CKV_AWS_358:aud and sub use StringEquals on one exact repository and environment.
   for_each = local.deploy_repos
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -83,11 +82,12 @@ data "aws_iam_policy_document" "deploy_trust" {
       values   = ["sts.amazonaws.com"]
     }
     # GitHub's default subject for new repositories is the immutable form
-    # repo:<owner>@<owner_id>/<repo>@<repository_id>:environment:<env>.
+    # repo:<owner>@<owner_id>/<repo>@<repository_id>:environment:<env>, used
+    # when the ids are pinned. Access Analyzer rejects a wildcard id.
     condition {
-      test     = each.value.repository_id == null ? "StringLike" : "StringEquals"
+      test     = "StringEquals"
       variable = "${var.github_oidc_host}:sub"
-      values   = local.repo_subjects[each.key]
+      values   = [local.repo_subjects[each.key]]
     }
   }
 }

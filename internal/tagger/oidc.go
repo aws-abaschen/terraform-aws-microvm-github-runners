@@ -21,19 +21,20 @@ import (
 // a verified token are trusted; sub is ignored because organisations can
 // customise its format.
 type Claims struct {
-	Issuer          string   `json:"iss"`
-	Audience        audience `json:"aud"`
-	Expiry          int64    `json:"exp"`
-	NotBefore       int64    `json:"nbf"`
-	IssuedAt        int64    `json:"iat"`
-	ID              string   `json:"jti"`
-	Repository      string   `json:"repository"`
-	RepositoryOwner string   `json:"repository_owner"`
-	RepositoryID    string   `json:"repository_id"`
-	Environment     string   `json:"environment"`
-	RunID           string   `json:"run_id"`
-	RunAttempt      string   `json:"run_attempt"`
-	Workflow        string   `json:"workflow_ref"`
+	Issuer            string   `json:"iss"`
+	Audience          audience `json:"aud"`
+	Expiry            int64    `json:"exp"`
+	NotBefore         int64    `json:"nbf"`
+	IssuedAt          int64    `json:"iat"`
+	ID                string   `json:"jti"`
+	Repository        string   `json:"repository"`
+	RepositoryOwner   string   `json:"repository_owner"`
+	RepositoryID      string   `json:"repository_id"`
+	RepositoryOwnerID string   `json:"repository_owner_id"`
+	Environment       string   `json:"environment"`
+	RunID             string   `json:"run_id"`
+	RunAttempt        string   `json:"run_attempt"`
+	Workflow          string   `json:"workflow_ref"`
 }
 
 // audience accepts the string and the array form of aud.

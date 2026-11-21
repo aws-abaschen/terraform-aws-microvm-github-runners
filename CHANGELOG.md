@@ -30,7 +30,8 @@ All notable changes follow [Conventional Commits](https://www.conventionalcommit
 ### Fixed
 
 - Bucket policy: `DenyUnencryptedUploads` used `StringNotEqualsIfExists`, which also matches a missing header, so every upload without an explicit `aws:kms` header was denied, Terraform state included. It now denies only a present header other than `aws:kms` (a `Null` test plus `StringNotEquals`). The consumer example drops `encrypt = true`, which sends `AES256`.
-- Deploy role trust: accept GitHub's immutable OIDC subject `repo:<owner>@<owner_id>/<repo>@<repository_id>:...`, the default for new repositories, and pin it exactly with the new `owner_id` and `repository_id` of `bootstrap.repositories`. The tagger checks a pinned `repository_id`.
+- Deploy role trust: support GitHub's immutable OIDC subject `repo:<owner>@<owner_id>/<repo>@<repository_id>:...`, the default for new repositories, through the new `owner_id` and `repository_id` of `bootstrap.repositories` (exact match; Access Analyzer rejects a wildcard id). The tagger checks a pinned `repository_id`.
+- `tagger_github_owners` is a map of owner to numeric owner id (was a list): the entry role trusts `repo:<owner>@<id>/*` and the tagger checks `repository_owner_id`.
 
 - Network connector operator role: trust `lambda.amazonaws.com` without `aws:SourceAccount`, which `CreateNetworkConnector` rejects.
 - KMS key policy: allow the Lambda service principal to build and launch MicroVM images; dispatcher gets `kms:ReEncrypt*`.

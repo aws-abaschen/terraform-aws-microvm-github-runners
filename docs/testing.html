@@ -46,10 +46,10 @@
   <p class="lead">Each layer catches what the one before cannot. Policy simulation catches what unit tests cannot see, and a real GitHub token catches what a simulation cannot model.</p>
   <table>
     <tr><th>Layer</th><th>What it proves</th><th>Command</th><th>Needs</th><th>Last result</th></tr>
-    <tr><td>Go unit tests</td><td>Webhook HMAC and repository checks, dispatcher and sweeper state machine, broker caller checks, the tagger's token checks (algorithm, key, issuer, audience, time claims, owner, registry, environment, pinned id, replay), JWKS refresh</td><td><code>just test</code></td><td>Go</td><td><span class="status ok">47 tests and subtests pass, race detector on</span></td></tr>
+    <tr><td>Go unit tests</td><td>Webhook HMAC and repository checks, dispatcher and sweeper state machine, broker caller checks, the tagger's token checks (algorithm, key, issuer, audience, time claims, owner and owner id, registry, environment, pinned repository id, replay), JWKS refresh</td><td><code>just test</code></td><td>Go</td><td><span class="status ok">49 tests and subtests pass, race detector on</span></td></tr>
     <tr><td>Static checks</td><td>Formatting, <code>go vet</code>, golangci-lint, govulncheck, <code>terraform validate</code> of every module and example, tflint, checkov</td><td><code>just check</code>, <code>golangci-lint run ./...</code>, <code>tflint --recursive</code>, <code>checkov -d modules</code></td><td>Go, Terraform</td><td><span class="status ok">0 issues · checkov 378 passed, 0 failed</span></td></tr>
     <tr><td>Reproducible build</td><td>Release binaries cross-build for arm64 and x64; zips are written deterministically (<code>cmd/zipdet</code>: fixed timestamps and Unix modes, also on Windows)</td><td><code>just release-assets</code></td><td>Go</td><td><span class="status ok">CI green</span></td></tr>
-    <tr><td>IAM simulation</td><td>The account boundary and the SCP allow a repository its own resources and deny everything else, with Access Analyzer on every document</td><td><code>just iam-sim</code></td><td>AWS credentials, read-only APIs, nothing deployed</td><td><span class="status ok">60 boundary and 8 SCP cases passed</span> <span class="status todo"><code>just iam-sim</code> (61 + 11 cases) not yet run</span></td></tr>
+    <tr><td>IAM simulation</td><td>The account boundary and the SCP allow a repository its own resources and deny everything else, with Access Analyzer on every document</td><td><code>just iam-sim</code></td><td>AWS credentials, read-only APIs, nothing deployed</td><td><span class="status ok">72 of 72 cases pass, Access Analyzer clean on 5 documents</span></td></tr>
     <tr><td>Sandbox smoke</td><td>A MicroVM starts like the dispatcher starts it (VPC egress, <code>NO_INGRESS</code>, KMS), its role reaches SSM, it terminates. The tagger reaches GitHub's keys and refuses a forged token</td><td><code>just sandbox-smoke</code></td><td>The sandbox</td><td><span class="status ok">6 of 6</span></td></tr>
     <tr><td>End to end</td><td>A real GitHub Actions workflow signs in through GitHub OIDC on both deploy paths and runs allow and deny checks against real AWS</td><td><code>just sandbox-e2e</code></td><td>The sandbox and the test repository</td><td><span class="status ok">37 of 37</span></td></tr>
     <tr><td>Resilience drills</td><td>Lost webhooks, a VM killed mid-job, capacity exhaustion, broker outage, fallback (DORA Art. 24–25)</td><td><code>just drill-lost-webhooks</code>, the others by hand</td><td>A deployed repository</td><td><span class="status todo">run per your test plan</span></td></tr>
@@ -84,7 +84,7 @@ terraform -chdir=tools/iamsim output -json policies | go run ./cmd/iamsim -dump<
   <h2><small>03 · Sandbox</small>A throw-away landing zone in one account</h2>
   <p><code>examples/sandbox</code> stands in for the landing zone with a small VPC and one NAT gateway (about $1–2 a day). It applies <code>bootstrap</code> with the tagger enabled, builds the runner image, and deploys one repository. Every resource is tagged <code>purpose=microvm-runner-sandbox</code>.</p>
   <ol class="steps">
-    <li><strong>Pin the test repository (optional, recommended):</strong> <code>export TF_VAR_github_ids='{owner_id=&lt;id&gt;,repository_id=&lt;id&gt;}'</code>, from <code>gh api repos/&lt;owner&gt;/&lt;repo&gt; --jq '.owner.id,.id'</code>. The deploy role then trusts exactly the immutable OIDC subject.</li>
+    <li><strong>Pin the test repository (required):</strong> <code>export TF_VAR_github_ids='{owner_id=&lt;id&gt;,repository_id=&lt;id&gt;}'</code>, from <code>gh api repos/&lt;owner&gt;/&lt;repo&gt; --jq '.owner.id,.id'</code>. New repositories sign in with the immutable OIDC subject, and the deploy role and the tagger owner need these ids.</li>
     <li><strong>Up:</strong> <code>just sandbox-up &lt;owner/repo&gt; eu-central-1 false</code> (<code>false</code> when the account already has the GitHub OIDC provider). About 15 minutes, mostly the image build.</li>
     <li><strong>Smoke:</strong> <code>just sandbox-smoke eu-central-1</code>, then <code>aws logs tail &lt;log_group&gt; --since 15m</code> for the VM's own log.</li>
     <li><strong>End to end:</strong> <code>just sandbox-e2e &lt;owner/repo&gt;</code> (next section).</li>
@@ -107,6 +107,7 @@ terraform -chdir=tools/iamsim output -json policies | go run ./cmd/iamsim -dump<
     <tr><td>Tagger with a token for the STS audience</td><td>denied</td><td>phase2</td></tr>
     <tr><td>Tagger with the right token</td><td>session issued</td><td>phase2</td></tr>
     <tr><td>The same token again</td><td>denied (replay)</td><td>phase2</td></tr>
+    <tr><td>The session is the expected deploy role</td><td><code>deploy-&lt;id&gt;</code> or <code>deploy</code> with a <code>&lt;id&gt;-&lt;run&gt;</code> session</td><td>both</td></tr>
     <tr><td>Read own registry entry, platform configuration</td><td>allowed</td><td>both</td></tr>
     <tr><td>Write and delete an object under own state prefix</td><td>allowed</td><td>both</td></tr>
     <tr><td>Create a role of its own (boundary, own tags), then delete it</td><td>allowed</td><td>both</td></tr>
@@ -115,7 +116,7 @@ terraform -chdir=tools/iamsim output -json policies | go run ./cmd/iamsim -dump<
     <tr><td>Retag its own role to another repository, remove its boundary</td><td>denied</td><td>both</td></tr>
     <tr><td>Invoke the tagger, update the broker, read the GitHub App key</td><td>denied</td><td>both</td></tr>
   </table>
-  <p>Run on 2026-11-21 from <code>aws-abaschen/microvm-runner-sandbox</code>: 3 tagger checks and 17 per path, 37 in all, every one passing.</p>
+  <p>Run twice on 2026-11-21 from <code>aws-abaschen/microvm-runner-sandbox</code>, the second time after pinning the owner id in the entry role: 3 tagger checks and 17 per path, 37 in all, every one passing.</p>
 </section>
 
 <!-- ============================== FOUND ============================== -->
@@ -126,6 +127,7 @@ terraform -chdir=tools/iamsim output -json policies | go run ./cmd/iamsim -dump<
     <tr><th>Found by</th><th>Problem</th><th>Fix</th></tr>
     <tr><td>End to end</td><td>New GitHub repositories sign in with the immutable subject <code>repo:&lt;owner&gt;@&lt;owner_id&gt;/&lt;repo&gt;@&lt;repository_id&gt;:…</code>. Neither deploy role matched it, so no real deploy could have signed in.</td><td>Both forms accepted. Optional pinned ids make the trust exact, and the tagger checks the pinned id.</td></tr>
     <tr><td>End to end</td><td>The bucket policy denied every upload without an <code>aws:kms</code> header, Terraform state included. <code>StringNotEqualsIfExists</code>, like any negated operator, also matches a missing key.</td><td>Deny only a present, wrong header (<code>Null</code> test plus <code>StringNotEquals</code>). The consumer example drops <code>encrypt = true</code>, which sends <code>AES256</code>.</td></tr>
+    <tr><td>Access Analyzer (<code>just iam-sim</code>)</td><td>The first fix for immutable subjects used <code>repo:&lt;owner&gt;@*/…</code>. IAM accepted it and the end-to-end run passed, but Access Analyzer reports a wildcard right after the <code>@</code> as too permissive: any id would match.</td><td>Owner and repository ids are pinned instead: <code>tagger_github_owners</code> maps owners to ids, and the tagger checks <code>repository_owner_id</code>.</td></tr>
     <tr><td>Review, confirmed by IAM simulation</td><td>The boundary's permissions followed the tags, so deploy-B retagged with A's id would act as A.</td><td><code>TagMatchesName</code>: a tag only counts on a role named for it.</td></tr>
     <tr><td>Access Analyzer</td><td><code>sts:SetSourceIdentity</code> doesn't support <code>aws:RequestTag</code>, so those conditions would have been ignored for it.</td><td>Its own trust statement.</td></tr>
     <tr><td>Sandbox</td><td>Connector operator trust, KMS key policy for the MicroVM service, boundary size, image build dependencies.</td><td>See the CHANGELOG.</td></tr>

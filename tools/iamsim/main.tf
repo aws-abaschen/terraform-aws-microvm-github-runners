@@ -37,7 +37,7 @@ module "policy" {
   broker_function_arn  = "arn:aws:lambda:${local.region}:${local.account}:function:gha-microvm-broker"
   app_secret_arn       = "arn:aws:secretsmanager:${local.region}:${local.account}:secret:gha-microvm/platform/github-app-AbCdEf"
   oidc_provider_arn    = "arn:aws:iam::${local.account}:oidc-provider/token.actions.githubusercontent.com"
-  tagger_github_owners = ["acme"]
+  tagger_github_owners = { acme = 1234567 }
 }
 
 module "guardrails" {

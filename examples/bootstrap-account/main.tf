@@ -45,7 +45,7 @@ module "runners_platform" {
 
   # Phase 2: deploys of acme repositories go through the tagger and one shared
   # deploy role. Set per_repository_deploy_roles = false once all have moved.
-  tagger_github_owners = ["acme"]
+  tagger_github_owners = { acme = 1234567 } # gh api users/acme --jq .id
 
   alarm_topic_arn    = null # or the topic of your incident management tool
   log_retention_days = 400

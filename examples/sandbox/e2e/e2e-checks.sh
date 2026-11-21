@@ -24,9 +24,10 @@ denied() {
 arn=$(aws sts get-caller-identity --query Arn --output text)
 echo "session: $arn"
 case $phase in
-  phase1) [[ $arn == *":assumed-role/gha-microvm-deploy-$id/"* ]] || { echo "FAIL unexpected role"; fail=1; } ;;
-  phase2) [[ $arn == *":assumed-role/gha-microvm-deploy/$id-"* ]] || { echo "FAIL unexpected role"; fail=1; } ;;
+  phase1) want=":assumed-role/gha-microvm-deploy-$id/" ;;
+  phase2) want=":assumed-role/gha-microvm-deploy/$id-" ;;
 esac
+if [[ $arn == *"$want"* ]]; then echo "PASS session is the expected deploy role"; else echo "FAIL session is $arn, want *$want*"; fail=1; fi
 
 trust='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
 role="gha-microvm-$id-e2e-$phase"

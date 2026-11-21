@@ -197,7 +197,7 @@ func runTagger(awsCfg aws.Config, log *slog.Logger) {
 			Issuer: env("OIDC_ISSUER"), Audience: env("TAGGER_AUDIENCE"),
 			HTTP: &http.Client{Timeout: 5 * time.Second}, Now: time.Now,
 		},
-		Owners:   labels.Split(strings.ToLower(env("ALLOWED_OWNERS"))),
+		Owners:   ownerIDs(env("ALLOWED_OWNERS")),
 		Registry: &awsx.Registry{Client: ssm.NewFromConfig(awsCfg), Prefix: env("REGISTRY_PREFIX")},
 		Replay:   &awsx.JTIStore{DB: dynamodb.NewFromConfig(awsCfg), Table: env("JTI_TABLE")},
 		STS:      &awsx.DeployRole{STS: sts.NewFromConfig(awsCfg), RoleARN: env("DEPLOY_ROLE_ARN")},
@@ -205,6 +205,20 @@ func runTagger(awsCfg aws.Config, log *slog.Logger) {
 		Log:      log,
 	}
 	lambda.Start(t.Handle)
+}
+
+// ownerIDs parses ALLOWED_OWNERS, "owner:id,owner:id", into lower-case owner => id.
+func ownerIDs(s string) map[string]string {
+	out := map[string]string{}
+	for _, p := range labels.Split(s) {
+		o, id, ok := strings.Cut(p, ":")
+		if !ok || id == "" {
+			fmt.Fprintf(os.Stderr, "ALLOWED_OWNERS entry %q must be owner:id\n", p)
+			os.Exit(1)
+		}
+		out[strings.ToLower(o)] = id
+	}
+	return out
 }
 
 func cachedSecret(sm *secretsmanager.Client, arn string, ttl time.Duration) func(context.Context) ([]byte, error) {

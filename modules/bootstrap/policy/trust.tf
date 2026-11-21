@@ -10,8 +10,9 @@ variable "github_oidc_host" {
   default = "token.actions.githubusercontent.com"
 }
 variable "tagger_github_owners" {
-  type    = list(string)
-  default = []
+  description = "Owner login => numeric owner id."
+  type        = map(number)
+  default     = {}
 }
 
 locals {
@@ -74,12 +75,14 @@ data "aws_iam_policy_document" "deploy_entry_trust" {
       values   = ["sts.amazonaws.com"]
     }
     # Both default subject forms: repo:<owner>/... and the immutable
-    # repo:<owner>@<owner_id>/... that new repositories get. An organisation
-    # with another sub template must adapt this; the tagger never reads sub.
+    # repo:<owner>@<owner_id>/... that new repositories get, with the owner id
+    # pinned (Access Analyzer rejects a wildcard right after the @). An
+    # organisation with another sub template must adapt this; the tagger
+    # never reads sub.
     condition {
       test     = "StringLike"
       variable = "${var.github_oidc_host}:sub"
-      values   = flatten([for o in var.tagger_github_owners : ["repo:${o}/*:environment:*", "repo:${o}@*/*:environment:*"]])
+      values   = flatten([for o, id in var.tagger_github_owners : ["repo:${o}/*:environment:*", "repo:${o}@${id}/*:environment:*"]])
     }
   }
 }

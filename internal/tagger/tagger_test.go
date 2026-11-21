@@ -58,7 +58,7 @@ func sign(t *testing.T, k keyPair, header, claims map[string]any) string {
 func claims(mod map[string]any) map[string]any {
 	c := map[string]any{
 		"iss": issuer, "aud": aud, "exp": now.Add(5 * time.Minute).Unix(), "nbf": now.Add(-time.Minute).Unix(),
-		"iat": now.Add(-time.Minute).Unix(), "jti": "j-1", "repository": "Acme/App", "repository_owner": "Acme", "repository_id": "1001",
+		"iat": now.Add(-time.Minute).Unix(), "jti": "j-1", "repository": "Acme/App", "repository_owner": "Acme", "repository_owner_id": "77", "repository_id": "1001",
 		"environment": "runners", "run_id": "42", "run_attempt": "1", "sub": "repo:Acme/App:environment:runners",
 		"workflow_ref": "Acme/App/.github/workflows/deploy-runners.yml@refs/heads/main",
 	}
@@ -135,7 +135,7 @@ func newFixture(t *testing.T) fixture {
 	a := &assumer{}
 	return fixture{
 		t: &Tagger{
-			Verifier: v, Owners: []string{"acme"},
+			Verifier: v, Owners: map[string]string{"acme": "77"},
 			Registry: registry{"acme/app": {Repository: "acme/app", Environment: "runners"}, "acme/prod": {Repository: "acme/prod", Environment: "production"}, "acme/pinned": {Repository: "acme/pinned", Environment: "runners", RepositoryID: "2002"}},
 			Replay:   replay{}, STS: a, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
 		},
@@ -197,6 +197,8 @@ func TestDenies(t *testing.T) {
 		{"no jti", nil, nil, map[string]any{"jti": nil}},
 		{"owner not allowed", nil, nil, map[string]any{"repository": "evil/app", "repository_owner": "evil"}},
 		{"owner mismatch", nil, nil, map[string]any{"repository_owner": "evil"}},
+		{"owner id mismatch (owner name taken over)", nil, nil, map[string]any{"repository_owner_id": "666"}},
+		{"no owner id", nil, nil, map[string]any{"repository_owner_id": nil}},
 		{"not onboarded", nil, nil, map[string]any{"repository": "acme/new"}},
 		{"no environment", nil, nil, map[string]any{"environment": nil}},
 		{"environment mismatch", nil, nil, map[string]any{"repository": "acme/prod", "environment": "runners"}},

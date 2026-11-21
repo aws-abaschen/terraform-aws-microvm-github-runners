@@ -84,10 +84,11 @@ variable "repositories" {
 
     owner_id and repository_id are GitHub's numeric ids (gh api repos/<owner>/<repo>
     --jq '.owner.id,.id'). When set, the deploy role trusts only the immutable
-    OIDC subject repo:<owner>@<owner_id>/<repo>@<repository_id>:..., and the
-    tagger requires the token's repository_id: a deleted and recreated
-    repository with the same name gets nothing. Without them both subject
-    forms are accepted, with any id.
+    OIDC subject repo:<owner>@<owner_id>/<repo>@<repository_id>:..., which is
+    GitHub's default for new repositories, and the tagger requires the token's
+    repository_id: a deleted and recreated repository with the same name gets
+    nothing. Without them only repo:<owner>/<repo>:... is trusted (Access
+    Analyzer rejects a wildcard id).
   EOT
   type = map(object({
     environment   = optional(string, "runners")
@@ -109,12 +110,16 @@ variable "tagger_github_owners" {
   description = <<-EOT
     Phase 2 (docs/iam.html): GitHub owners (organisations or users) whose
     onboarded repositories deploy through the tagger and the shared deploy role
-    <prefix>-deploy. Empty disables the tagger. Owners are matched without case.
+    <prefix>-deploy, mapped to their numeric owner id
+    (gh api users/<owner> --jq .id). The entry role trusts
+    repo:<owner>/*:environment:* and the immutable repo:<owner>@<id>/*:..., and
+    the tagger requires the token's repository_owner_id: a new account that
+    takes over a deleted owner's name gets nothing. Empty disables the tagger.
   EOT
-  type        = list(string)
-  default     = []
+  type        = map(number)
+  default     = {}
   validation {
-    condition     = alltrue([for o in var.tagger_github_owners : can(regex("^[A-Za-z0-9-]+$", o))])
+    condition     = alltrue([for o in keys(var.tagger_github_owners) : can(regex("^[A-Za-z0-9-]+$", o))])
     error_message = "Owners are GitHub logins: letters, digits and dashes, no wildcards."
   }
 }

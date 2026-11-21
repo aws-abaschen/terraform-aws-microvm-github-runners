@@ -10,7 +10,6 @@ import (
 	"errors"
 	"log/slog"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -69,7 +68,7 @@ type TokenVerifier interface {
 // Tagger serves one request per invocation.
 type Tagger struct {
 	Verifier TokenVerifier
-	Owners   []string // allowed repository owners, lower case
+	Owners   map[string]string // allowed owner (lower case) => numeric owner id
 	Registry Registry
 	Replay   Replay
 	STS      Assumer
@@ -102,8 +101,12 @@ func (t *Tagger) Handle(ctx context.Context, req Request) (Response, error) {
 	if !ok || name == "" || strings.Contains(name, "/") || !strings.EqualFold(owner, c.RepositoryOwner) {
 		return deny(log, "bad repository claim", nil)
 	}
-	if !slices.Contains(t.Owners, owner) {
+	ownerID, allowed := t.Owners[owner]
+	if !allowed {
 		return deny(log, "owner not allowed", nil)
+	}
+	if c.RepositoryOwnerID != ownerID {
+		return deny(log, "owner id mismatch", nil)
 	}
 	if c.Environment == "" {
 		return deny(log, "no environment", nil)

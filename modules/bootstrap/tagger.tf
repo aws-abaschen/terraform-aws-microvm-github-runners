@@ -184,7 +184,7 @@ resource "aws_lambda_function" "tagger" {
       FUNCTION_ROLE   = "tagger"
       OIDC_ISSUER     = "https://${var.github_oidc_host}"
       TAGGER_AUDIENCE = local.tagger_audience
-      ALLOWED_OWNERS  = lower(join(",", var.tagger_github_owners))
+      ALLOWED_OWNERS  = join(",", [for o, id in var.tagger_github_owners : "${lower(o)}:${id}"])
       REGISTRY_PREFIX = "/${local.prefix}/registry"
       JTI_TABLE       = aws_dynamodb_table.tagger_jti[0].name
       DEPLOY_ROLE_ARN = local.deploy_shared

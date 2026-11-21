@@ -30,12 +30,11 @@ variable "repository" {
 }
 
 variable "github_ids" {
-  description = "Optional {owner_id, repository_id} of the test repository (gh api repos/<owner>/<repo> --jq '.owner.id,.id'): pins the deploy role to the immutable OIDC subject."
+  description = "{owner_id, repository_id} of the test repository (gh api repos/<owner>/<repo> --jq '.owner.id,.id'). New repositories sign in with the immutable OIDC subject, which needs both."
   type = object({
     owner_id      = number
     repository_id = number
   })
-  default = null
 }
 
 variable "create_github_oidc_provider" {
@@ -136,9 +135,9 @@ module "bootstrap" {
   dynamodb_gateway_route_table_ids = [aws_route_table.private.id]
   lambda_zip_path                  = "${path.module}/../../dist/lambda.zip"
   create_github_oidc_provider      = var.create_github_oidc_provider
-  repositories                     = { (var.repository) = var.github_ids == null ? {} : var.github_ids }
+  repositories                     = { (var.repository) = var.github_ids }
   # Phase 2: the tagger and the shared deploy role, next to the phase 1 role.
-  tagger_github_owners       = [split("/", var.repository)[0]]
+  tagger_github_owners       = { (split("/", var.repository)[0]) = var.github_ids.owner_id }
   tagger_deletion_protection = false
 
   log_retention_days          = 7
