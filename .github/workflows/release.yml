@@ -1,0 +1,59 @@
+# Builds reproducible release assets, signs build provenance and an SBOM,
+# and publishes them. Consumers verify with `gh attestation verify`.
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - name: Test
+        run: go test -race -count=1 ./...
+      - name: Build assets
+        run: |
+          RUNNER_VERSION=$(sed -n 's/^runner_version := "\(.*\)"/\1/p' justfile)
+          SHA_ARM64=$(sed -n 's/^runner_sha_arm64 := "\(.*\)"/\1/p' justfile)
+          SHA_X64=$(sed -n 's/^runner_sha_x64 := "\(.*\)"/\1/p' justfile)
+          export RUNNER_VERSION SHA_ARM64 SHA_X64
+          ./scripts/build-release.sh
+      - name: SBOM
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          path: .
+          format: spdx-json
+          output-file: dist/sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/lambda.zip
+            dist/image-arm64.zip
+            dist/image-x64.zip
+            dist/sbom.spdx.json
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" --verify-tag --generate-notes \
+            dist/lambda.zip dist/image-arm64.zip dist/image-x64.zip dist/SHA256SUMS dist/sbom.spdx.json
