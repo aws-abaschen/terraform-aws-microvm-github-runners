@@ -4,7 +4,8 @@ Per-repository ephemeral GitHub Actions runners on AWS Lambda MicroVMs, deployed
 
 ## Conventions
 
-- Conventional commits; commit and push when a task is done.
+- Conventional commits; land each finished task as one squashed commit on `main` (no PRs), then push.
+- Design for scale (many repositories per account): prefer generic ABAC policies (`aws:PrincipalTag` matched to `aws:ResourceTag` / `aws:RequestTag`) over per-repository policies. Enforce the tags with tag policies and `aws:TagKeys` conditions, and set session tags in the roles that create resources.
 - Keep answers short; no summary after completion.
 - New dependencies: use the latest version; if not possible, add a comment explaining why.
 - GitHub Actions: always pin by commit SHA with a `# vX.Y.Z` comment, latest release, also in docs and examples.
