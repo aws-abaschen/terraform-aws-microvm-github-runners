@@ -33,6 +33,7 @@ import (
 	"github.com/aws-abaschen/terraform-aws-microvm-github-runners/internal/labels"
 	"github.com/aws-abaschen/terraform-aws-microvm-github-runners/internal/obs"
 	"github.com/aws-abaschen/terraform-aws-microvm-github-runners/internal/runner"
+	"github.com/aws-abaschen/terraform-aws-microvm-github-runners/internal/tagger"
 	"github.com/aws-abaschen/terraform-aws-microvm-github-runners/internal/webhook"
 )
 
@@ -62,8 +63,12 @@ func main() {
 		log.Error("aws config", "err", err)
 		os.Exit(1)
 	}
-	if os.Getenv("FUNCTION_ROLE") == "broker" {
+	switch os.Getenv("FUNCTION_ROLE") {
+	case "broker":
 		runBroker(ctx, awsCfg, log)
+		return
+	case "tagger":
+		runTagger(awsCfg, log)
 		return
 	}
 	repoFull := env("REPOSITORY")
@@ -157,7 +162,7 @@ func main() {
 		})
 
 	default:
-		log.Error("FUNCTION_ROLE must be webhook, dispatcher or sweeper")
+		log.Error("FUNCTION_ROLE must be webhook, dispatcher, sweeper, broker or tagger")
 		os.Exit(1)
 	}
 }
@@ -181,6 +186,25 @@ func runBroker(ctx context.Context, awsCfg aws.Config, log *slog.Logger) {
 		Registry: &awsx.Registry{Client: ssm.NewFromConfig(awsCfg), Prefix: env("REGISTRY_PREFIX")}, Tokens: app, HTTP: &http.Client{Timeout: 10 * time.Second}, Log: log, Now: time.Now,
 	}
 	lambda.Start(b.Handle)
+}
+
+// runTagger serves the platform tagger: GitHub OIDC token in, a session of
+// the shared deploy role tagged with the repository out.
+func runTagger(awsCfg aws.Config, log *slog.Logger) {
+	log = log.With("function_role", "tagger")
+	t := &tagger.Tagger{
+		Verifier: &tagger.Verifier{
+			Issuer: env("OIDC_ISSUER"), Audience: env("TAGGER_AUDIENCE"),
+			HTTP: &http.Client{Timeout: 5 * time.Second}, Now: time.Now,
+		},
+		Owners:   labels.Split(strings.ToLower(env("ALLOWED_OWNERS"))),
+		Registry: &awsx.Registry{Client: ssm.NewFromConfig(awsCfg), Prefix: env("REGISTRY_PREFIX")},
+		Replay:   &awsx.JTIStore{DB: dynamodb.NewFromConfig(awsCfg), Table: env("JTI_TABLE")},
+		STS:      &awsx.DeployRole{STS: sts.NewFromConfig(awsCfg), RoleARN: env("DEPLOY_ROLE_ARN")},
+		Duration: time.Duration(envInt("SESSION_SECONDS", 3600)) * time.Second,
+		Log:      log,
+	}
+	lambda.Start(t.Handle)
 }
 
 func cachedSecret(sm *secretsmanager.Client, arn string, ttl time.Duration) func(context.Context) ([]byte, error) {

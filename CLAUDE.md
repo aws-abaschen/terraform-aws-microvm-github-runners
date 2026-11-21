@@ -14,12 +14,12 @@ Per-repository ephemeral GitHub Actions runners on AWS Lambda MicroVMs, deployed
 
 ## Layout
 
-- `cmd/lambda`: one Go binary, `FUNCTION_ROLE` = webhook | dispatcher | sweeper | broker.
+- `cmd/lambda`: one Go binary, `FUNCTION_ROLE` = webhook | dispatcher | sweeper | broker | tagger.
 - `cmd/supervisor`: runs inside the MicroVM (hooks on :9000, reads and deletes the JIT SSM parameter, starts dockerd, runs `run.sh --jitconfig`).
 - `cmd/smoke`: sandbox smoke test, launches one MicroVM like the dispatcher.
 - `cmd/zipdet`: reproducible zips with Unix mode bits (used by every build, also on Windows).
 - `win.just`: PowerShell recipes for Windows (`just win::package`, `just win::sandbox-up …`); no zip and `bash` is WSL there.
-- `internal/`: broker (presigned STS caller check), runner (dispatch + sweep), github, webhook, awsx, obs.
+- `internal/`: broker (presigned STS caller check), tagger (GitHub OIDC to tagged deploy session), runner (dispatch + sweep), github, webhook, awsx, obs.
 - `modules/`: `bootstrap` (per account; `bootstrap/policy` renders the generic ABAC boundary), `runner-image`, `repo-runner` (per repository), `org-guardrails` (SCP, RCP, tag policy).
 - IAM design and scaling rules: `docs/iam.html`.
 - `examples/`: `bootstrap-account`, `consumer-repo`, `sandbox`.
@@ -44,7 +44,7 @@ On Windows prefix the sandbox recipes with `win::` (e.g. `just win::sandbox-up �
 3. Status (2026-11-21): smoke test passes (5/5) after fixes to the connector trust, KMS key policy, boundary size and Dockerfile.
    Verified: execution role trust `lambda.amazonaws.com`, run and terminate hooks with `NO_INGRESS`, KMS on `RunMicrovm`, connector operator trust (`lambda.amazonaws.com` only, no `aws:SourceAccount`), IMDS credentials in the VM.
    Still unverified: `RunMicrovm` with the dispatcher's own role (the smoke test runs as admin), dockerd readiness inside the VM, a real job end to end.
-   ABAC boundary (docs/iam.html): smoke test 5/5 again with the tag-scoped roles. Unverified: deploy role via GitHub OIDC, broker registry lookup, org-guardrails attached to an OU. Next: phase 2 tagger.
+   ABAC boundary (docs/iam.html): smoke test 5/5 again with the tag-scoped roles. Phase 2 tagger built: smoke test 6/6 (tagger fetches the JWKS and refuses a forged token). Unverified: a real workflow through either deploy path (entry role, tagger, shared deploy role), broker registry lookup, org-guardrails attached to an OU.
 4. Always finish with `just sandbox-down aws-abaschen/microvm-runner-sandbox eu-central-1 false` so nothing keeps costing money (NAT gateway ≈ $1–2/day). Check nothing tagged `purpose=microvm-runner-sandbox` is left.
 5. If the smoke test passes: optional end-to-end test with a GitHub App on a private test repo, then tag `v0.1.0` (the release workflow builds assets, SBOM and provenance).
 

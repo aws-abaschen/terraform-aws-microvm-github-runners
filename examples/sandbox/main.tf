@@ -128,6 +128,9 @@ module "bootstrap" {
   lambda_zip_path                  = "${path.module}/../../dist/lambda.zip"
   create_github_oidc_provider      = var.create_github_oidc_provider
   repositories                     = { (var.repository) = {} }
+  # Phase 2: the tagger and the shared deploy role, next to the phase 1 role.
+  tagger_github_owners       = [split("/", var.repository)[0]]
+  tagger_deletion_protection = false
 
   log_retention_days          = 7
   kms_deletion_window_days    = 7
@@ -180,5 +183,6 @@ output "smoke" {
     app_secret_arn  = module.bootstrap.github_app_secret_arn
     queue_arn       = module.runners.queue_arn
     deploy_role_arn = module.bootstrap.repositories[lower(var.repository)].deploy_role_arn
+    tagger_function = module.bootstrap.tagger.function_name
   }
 }

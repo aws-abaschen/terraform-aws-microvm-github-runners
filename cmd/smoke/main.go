@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	awslambda "github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/lambdamicrovms"
 	mvm "github.com/aws/aws-sdk-go-v2/service/lambdamicrovms/types"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
@@ -30,6 +32,7 @@ type outputs struct {
 	KMSKeyArn     string `json:"kms_key_arn"`
 	LogGroup      string `json:"log_group"`
 	ParamPrefix   string `json:"param_prefix"`
+	Tagger        string `json:"tagger_function"` // optional: phase 2 tagger
 }
 
 type result struct {
@@ -61,6 +64,11 @@ func main() {
 			mark = "FAIL"
 		}
 		fmt.Printf("%s  %-34s %s\n", mark, name, fmt.Sprintf(note, a...))
+	}
+
+	if o.Tagger != "" {
+		denied, msg := taggerRefusesForgery(ctx, awslambda.NewFromConfig(cfg), o.Tagger)
+		check("tagger refuses a forged token", denied, "%s (\"denied\" proves the JWKS fetch through egress)", msg)
 	}
 
 	name := fmt.Sprintf("smoke-%d", time.Now().Unix())
@@ -120,6 +128,25 @@ func main() {
 	check("TerminateMicrovm", state == mvm.MicrovmStateTerminated || state == "GONE", "state=%s", state)
 	fmt.Printf("\nVM logs: aws logs tail %s --region %s --since 15m\n", o.LogGroup, *region)
 	summary(results)
+}
+
+// taggerRefusesForgery sends a well-formed RS256 token with an unknown key id.
+// The tagger must fetch GitHub's JWKS to reject it: "denied" proves the
+// egress path, "verifier unavailable" means the JWKS fetch failed.
+func taggerRefusesForgery(ctx context.Context, c *awslambda.Client, fn string) (bool, string) {
+	enc := func(v any) string { b, _ := json.Marshal(v); return base64.RawURLEncoding.EncodeToString(b) }
+	tok := enc(map[string]string{"alg": "RS256", "kid": "smoke-unknown"}) + "." +
+		enc(map[string]any{"iss": "forged", "exp": time.Now().Add(time.Minute).Unix()}) + "." + base64.RawURLEncoding.EncodeToString([]byte("sig"))
+	payload, _ := json.Marshal(map[string]string{"token": tok})
+	out, err := c.Invoke(ctx, &awslambda.InvokeInput{FunctionName: &fn, Payload: payload})
+	if err != nil {
+		return false, errText(err)
+	}
+	var e struct {
+		ErrorMessage string `json:"errorMessage"`
+	}
+	_ = json.Unmarshal(out.Payload, &e)
+	return out.FunctionError != nil && e.ErrorMessage == "denied", "error=" + e.ErrorMessage
 }
 
 func waitState(ctx context.Context, c *lambdamicrovms.Client, id string, max time.Duration, want mvm.MicrovmState) (mvm.MicrovmState, string) {

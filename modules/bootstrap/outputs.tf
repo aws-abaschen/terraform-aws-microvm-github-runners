@@ -37,13 +37,23 @@ output "alarm_topic_arn" {
 }
 
 output "repositories" {
-  description = "Per repository: id, deploy role and the shared boundary. Store deploy_role_arn as the RUNNERS_DEPLOY_ROLE_ARN variable of the repository."
+  description = "Per repository: id, deploy role (null without per_repository_deploy_roles) and the shared boundary. Store deploy_role_arn as the RUNNERS_DEPLOY_ROLE_ARN variable of the repository."
   value = {
     for repo, r in local.repos : repo => {
       id              = r.id
-      deploy_role_arn = aws_iam_role.deploy[repo].arn
+      deploy_role_arn = try(aws_iam_role.deploy[repo].arn, null)
       boundary_arn    = aws_iam_policy.boundary.arn
       state_key       = "${r.id}/runners.tfstate"
     }
   }
+}
+
+output "tagger" {
+  description = "Phase 2 deploy path, null when tagger_github_owners is empty. Repositories store entry_role_arn as RUNNERS_ENTRY_ROLE_ARN and function_name as RUNNERS_TAGGER_FUNCTION."
+  value = local.tagger ? {
+    function_name   = aws_lambda_function.tagger[0].function_name
+    entry_role_arn  = aws_iam_role.deploy_entry[0].arn
+    deploy_role_arn = aws_iam_role.deploy_shared[0].arn
+    audience        = local.tagger_audience
+  } : null
 }

@@ -92,6 +92,32 @@ variable "repositories" {
   }
 }
 
+variable "tagger_github_owners" {
+  description = <<-EOT
+    Phase 2 (docs/iam.html): GitHub owners (organisations or users) whose
+    onboarded repositories deploy through the tagger and the shared deploy role
+    <prefix>-deploy. Empty disables the tagger. Owners are matched without case.
+  EOT
+  type        = list(string)
+  default     = []
+  validation {
+    condition     = alltrue([for o in var.tagger_github_owners : can(regex("^[A-Za-z0-9-]+$", o))])
+    error_message = "Owners are GitHub logins: letters, digits and dashes, no wildcards."
+  }
+}
+
+variable "per_repository_deploy_roles" {
+  description = "Create one deploy role per repository (phase 1). Set false once every repository deploys through the tagger, to free one role per repository."
+  type        = bool
+  default     = true
+}
+
+variable "tagger_deletion_protection" {
+  description = "Deletion protection of the tagger replay table. Disable only in sandboxes."
+  type        = bool
+  default     = true
+}
+
 variable "additional_job_actions" {
   description = "Extra actions on \"*\" allowed to every repository of this account (boundary ceiling, not a grant). Keep it short: the boundary is limited to 6,144 characters."
   type        = list(string)

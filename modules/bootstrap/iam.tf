@@ -8,6 +8,7 @@ resource "aws_iam_openid_connect_provider" "github" {
 locals {
   oidc_provider_arn = "arn:${local.partition}:iam::${local.account}:oidc-provider/${var.github_oidc_host}"
   repo_tags         = { for repo, r in local.repos : repo => { "gha-repo" = repo, "gha-repo-id" = r.id } }
+  deploy_repos      = var.per_repository_deploy_roles ? local.repos : {}
 }
 
 # One generic policy per account (modules/bootstrap/policy). It is BOTH the
@@ -53,9 +54,11 @@ resource "aws_ssm_parameter" "registry" {
   tags     = merge(local.tags, local.repo_tags[each.key])
 }
 
+# Phase 1: one deploy role per repository, tagged with it. Phase 2 replaces
+# them with the shared role of tagger.tf (per_repository_deploy_roles = false).
 data "aws_iam_policy_document" "deploy_trust" {
   # checkov:skip=CKV_AWS_358:aud and sub use StringEquals on one exact repository and environment.
-  for_each = local.repos
+  for_each = local.deploy_repos
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
     principals {
@@ -76,7 +79,7 @@ data "aws_iam_policy_document" "deploy_trust" {
 }
 
 resource "aws_iam_role" "deploy" {
-  for_each             = local.repos
+  for_each             = local.deploy_repos
   name                 = "${local.prefix}-deploy-${each.value.id}"
   description          = "Deploys MicroVM runners for ${each.key} from its ${each.value.environment} environment"
   assume_role_policy   = data.aws_iam_policy_document.deploy_trust[each.key].json
@@ -87,7 +90,7 @@ resource "aws_iam_role" "deploy" {
 }
 
 resource "aws_iam_role_policy_attachment" "deploy" {
-  for_each   = local.repos
+  for_each   = local.deploy_repos
   role       = aws_iam_role.deploy[each.key].name
   policy_arn = aws_iam_policy.boundary.arn
 }

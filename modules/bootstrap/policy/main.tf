@@ -204,9 +204,10 @@ data "aws_iam_policy_document" "this" {
   }
 
   # Guard rails that hold even if an allow above is widened later.
-  # The gha-repo-id tag only counts on a role named for that id: retagging a
-  # role (for example deploy-B with A's id) grants it nothing, even without the
-  # organisation SCP.
+  # The gha-repo-id tag only counts on a role named for that id, or on the
+  # shared deploy role, whose session tags only the tagger can set: retagging
+  # a role (for example deploy-B with A's id) grants it nothing, even without
+  # the organisation SCP.
   statement {
     sid       = "TagMatchesName"
     effect    = "Deny"
@@ -215,7 +216,7 @@ data "aws_iam_policy_document" "this" {
     condition {
       test     = "ArnNotLike"
       variable = "aws:PrincipalArn"
-      values   = ["${local.arn.iam}:role/${local.base}-*", "${local.arn.iam}:role/${local.prefix}-deploy-${local.id}"]
+      values   = ["${local.arn.iam}:role/${local.base}-*", "${local.arn.iam}:role/${local.prefix}-deploy-${local.id}", "${local.arn.iam}:role/${local.prefix}-deploy"]
     }
   }
   statement {

@@ -16,7 +16,7 @@ locals {
   platform_iam = [
     "${local.iam_arn}:policy/${local.prefix}-boundary",
     "${local.iam_arn}:role/${local.prefix}-broker",
-    "${local.iam_arn}:role/${local.prefix}-deploy-*",
+    "${local.iam_arn}:role/${local.prefix}-deploy*", # shared, entry and per-repository deploy roles
     "${local.iam_arn}:role/${local.prefix}-tagger*",
     "${local.iam_arn}:role/${local.prefix}-connector-operator",
   ]
@@ -44,7 +44,7 @@ locals {
           Effect    = "Deny"
           Action    = "sts:TagSession"
           Resource  = "*"
-          Condition = { Null = { "aws:RequestTag/gha-repo-id" = "false" }, ArnNotLike = { "aws:PrincipalArn" = [local.tagger] } }
+          Condition = { "ForAnyValue:StringEquals" = { "aws:TagKeys" = local.keys }, ArnNotLike = { "aws:PrincipalArn" = [local.tagger] } }
         },
         {
           Sid       = "DenyBoundaryEscape"
