@@ -64,6 +64,7 @@
   <li><a href="#review">Review</a></li>
   <li><a href="#architecture">Architecture</a></li>
   <li><a href="#lifecycle">Job lifecycle</a></li>
+  <li><a href="#reuse">VM reuse</a></li>
   <li><a href="#secrets">Secrets &amp; trust</a></li>
   <li><a href="#module">Terraform module</a></li>
   <li><a href="#usage">Usage</a></li>
@@ -294,6 +295,27 @@
   </table>
 </section>
 
+<!-- ============================== REUSE ============================== -->
+<section id="reuse">
+  <h2><small>Decision · ADR-001</small>Terminate after every job — no VM reuse</h2>
+  <p class="lead">Keeping a finished VM idle so the next job starts faster saves little time and breaks the guarantee that every job gets a clean VM.</p>
+
+  <table>
+    <tr><th>Option</th><th>Start time</th><th>Isolation</th><th>Idle cost</th><th>Verdict</th></tr>
+    <tr><td>Reuse a running VM</td><td>Fastest</td><td>✗ inherits previous job's disk, Docker cache and processes</td><td>Full compute (~$0.25/h at 2 vCPU / 4 GB)</td><td>Rejected</td></tr>
+    <tr><td>Suspend after the job, resume for the next one</td><td>Fast</td><td>✗ same dirty state</td><td>Snapshot storage, counts against the memory quota</td><td>Rejected</td></tr>
+    <tr><td><strong>Fresh VM per job, terminate after</strong></td><td>Snapshot start + runner registration</td><td>✓ clean VM every time</td><td>None</td><td><strong>Chosen</strong></td></tr>
+    <tr><td>Warm pool of clean VMs (suspended before registering)</td><td>Slightly faster</td><td>✓ still one job per VM</td><td>Snapshot storage, uses memory quota</td><td>Only if M1 shows a real gap</td></tr>
+  </table>
+
+  <div class="grid">
+    <div class="card"><h4>Why the gain is small</h4><p><code>RunMicrovm</code> already starts from a memory snapshot, not a cold boot. Most of the remaining delay is runner registration and GitHub assigning the job, and reuse removes neither.</p></div>
+    <div class="card"><h4>JIT runners are single-use</h4><p>A reused VM would still need a new JIT config per job, delivered on resume. That means more state for little benefit.</p></div>
+    <div class="card ok"><h4>Make starts faster instead</h4><p>Bake the unpacked runner, toolchains and common actions and images into the snapshot. Start <code>dockerd</code> only when a job uses it.</p></div>
+    <div class="card warn"><h4>Measure first</h4><p>M1 records the time from <code>queued</code> to <code>in_progress</code>. Add the warm pool only if that number is too high.</p></div>
+  </div>
+</section>
+
 <!-- ============================== SECRETS ============================== -->
 <section id="secrets">
   <h2><small>04 · Secrets &amp; trust</small>Each repo sees only its own secrets</h2>
@@ -465,7 +487,7 @@
   <h2><small>08 · Plan</small>Milestones</h2>
   <table>
     <tr><th>#</th><th>Milestone</th><th>Done when</th></tr>
-    <tr><td><span class="pill">M1</span></td><td>Runner image + supervisor</td><td>A manual <code>RunMicrovm</code> with a hand-made JIT config runs a hello-world job.</td></tr>
+    <tr><td><span class="pill">M1</span></td><td>Runner image + supervisor</td><td>A manual <code>RunMicrovm</code> with a hand-made JIT config runs a hello-world job. The time from <code>queued</code> to <code>in_progress</code> is measured.</td></tr>
     <tr><td><span class="pill">M2</span></td><td>webhook + dispatcher + DynamoDB</td><td>A pushed workflow gets a VM, and the VM is terminated on <code>completed</code>.</td></tr>
     <tr><td><span class="pill">M3</span></td><td>Sweeper, DLQ alarms, 65-min reaper</td><td>Killing the webhook still gets jobs picked up within 5 min.</td></tr>
     <tr><td><span class="pill">M4</span></td><td>bootstrap module + consumer example</td><td>A new repo onboards with only its own workflow.</td></tr>

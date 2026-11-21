@@ -13,6 +13,8 @@ Per-repository, ephemeral GitHub Actions runners on **AWS Lambda MicroVMs**, dep
 
 Proposal (v0.1). Implementation milestones are listed on the page.
 
+Decision: every VM runs one job and is then terminated. There is no reuse and no idle runners (ADR-001 on the page).
+
 ## Layout (planned)
 
 ```
