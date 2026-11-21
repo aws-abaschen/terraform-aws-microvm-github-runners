@@ -43,6 +43,12 @@ image-artifact arch="arm64" docker="true":
     $env:GOOS = ''; $env:GOARCH = ''; go run ./cmd/zipdet -o 'dist/image-{{arch}}.zip' -C $out -x supervisor Dockerfile supervisor actions-runner.tar.gz VERSION; if ($LASTEXITCODE) { exit 1 }; \
     (Get-FileHash 'dist/image-{{arch}}.zip').Hash.ToLower()
 
+# Check the account boundary, trust policies and guardrails with AWS's policy engine (read-only APIs, nothing deployed)
+iam-sim:
+    terraform -chdir=tools/iamsim init -input=false | Out-Null; if ($LASTEXITCODE) { exit 1 }
+    terraform -chdir=tools/iamsim apply -auto-approve -input=false | Out-Null; if ($LASTEXITCODE) { exit 1 }
+    $env:GOOS = ''; terraform -chdir=tools/iamsim output -json policies | go run ./cmd/iamsim
+
 # Deploy the sandbox: VPC + NAT, bootstrap, image and one repository (≈ $1–2/day; run sandbox-down after)
 sandbox-up repository region="eu-central-1" oidc="true": package (image-artifact "arm64")
     terraform -chdir={{sandbox}} init -input=false; if ($LASTEXITCODE) { exit 1 }

@@ -38,6 +38,8 @@ just sandbox-e2e owner/test-repo                      # real GitHub OIDC through
 just sandbox-down owner/test-repo eu-central-1 false
 ```
 
+`just iam-sim` checks the IAM documents with AWS's policy engine without deploying anything. All test layers and sample repositories: [Tests & samples](https://aws-abaschen.github.io/terraform-aws-microvm-github-runners/testing.html).
+
 Consumers use release assets: they verify `SHA256SUMS` and the build provenance with `gh attestation verify` before `terraform apply`.
 
 ## Requirements

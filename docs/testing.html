@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tests &amp; samples · MicroVM GitHub Runners</title>
+<meta name="description" content="How MicroVM GitHub Runners is tested, from unit tests to a real GitHub workflow against AWS, and the sample repositories to start from.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <a class="brand" href="index.html">MicroVM GitHub Runners</a>
+  <div class="links">
+    <a href="index.html">Overview</a>
+    <a href="security.html">Security</a>
+    <a href="iam.html">IAM design</a>
+    <a href="operations.html">Operations</a>
+    <a href="dora.html">DORA</a>
+    <a class="active" href="testing.html">Tests &amp; samples</a>
+    <a href="https://github.com/aws-abaschen/terraform-aws-microvm-github-runners">GitHub</a>
+  </div>
+</div>
+
+<header>
+  <span class="tag">Last full run · 2026-11-21</span>
+  <h1>How it is tested,<br>and what to start from</h1>
+  <p>Seven layers of tests. The first three run on every push and cost nothing. The next three need an AWS account: one checks IAM with AWS's own policy engine without deploying anything, the other two deploy a throw-away sandbox, launch a real MicroVM and run a real GitHub workflow through both deploy paths, then tear everything down. The last, resilience drills, runs on a deployed repository.</p>
+</header>
+
+<nav><ul>
+  <li><a href="#layers">Test layers</a></li>
+  <li><a href="#iam">IAM simulation</a></li>
+  <li><a href="#sandbox">Sandbox</a></li>
+  <li><a href="#e2e">End to end</a></li>
+  <li><a href="#found">What tests found</a></li>
+  <li><a href="#gaps">Not covered</a></li>
+  <li><a href="#samples">Sample repositories</a></li>
+</ul></nav>
+
+<main>
+
+<!-- ============================== LAYERS ============================== -->
+<section id="layers">
+  <h2><small>01 · Layers</small>From a unit test to a real workflow</h2>
+  <p class="lead">Each layer catches what the one before cannot. Policy simulation catches what unit tests cannot see, and a real GitHub token catches what a simulation cannot model.</p>
+  <table>
+    <tr><th>Layer</th><th>What it proves</th><th>Command</th><th>Needs</th><th>Last result</th></tr>
+    <tr><td>Go unit tests</td><td>Webhook HMAC and repository checks, dispatcher and sweeper state machine, broker caller checks, the tagger's token checks (algorithm, key, issuer, audience, time claims, owner, registry, environment, pinned id, replay), JWKS refresh</td><td><code>just test</code></td><td>Go</td><td><span class="status ok">47 tests and subtests pass, race detector on</span></td></tr>
+    <tr><td>Static checks</td><td>Formatting, <code>go vet</code>, golangci-lint, govulncheck, <code>terraform validate</code> of every module and example, tflint, checkov</td><td><code>just check</code>, <code>golangci-lint run ./...</code>, <code>tflint --recursive</code>, <code>checkov -d modules</code></td><td>Go, Terraform</td><td><span class="status ok">0 issues · checkov 378 passed, 0 failed</span></td></tr>
+    <tr><td>Reproducible build</td><td>Release binaries cross-build for arm64 and x64; zips are written deterministically (<code>cmd/zipdet</code>: fixed timestamps and Unix modes, also on Windows)</td><td><code>just release-assets</code></td><td>Go</td><td><span class="status ok">CI green</span></td></tr>
+    <tr><td>IAM simulation</td><td>The account boundary and the SCP allow a repository its own resources and deny everything else, with Access Analyzer on every document</td><td><code>just iam-sim</code></td><td>AWS credentials, read-only APIs, nothing deployed</td><td><span class="status ok">60 boundary and 8 SCP cases passed</span> <span class="status todo"><code>just iam-sim</code> (61 + 11 cases) not yet run</span></td></tr>
+    <tr><td>Sandbox smoke</td><td>A MicroVM starts like the dispatcher starts it (VPC egress, <code>NO_INGRESS</code>, KMS), its role reaches SSM, it terminates. The tagger reaches GitHub's keys and refuses a forged token</td><td><code>just sandbox-smoke</code></td><td>The sandbox</td><td><span class="status ok">6 of 6</span></td></tr>
+    <tr><td>End to end</td><td>A real GitHub Actions workflow signs in through GitHub OIDC on both deploy paths and runs allow and deny checks against real AWS</td><td><code>just sandbox-e2e</code></td><td>The sandbox and the test repository</td><td><span class="status ok">37 of 37</span></td></tr>
+    <tr><td>Resilience drills</td><td>Lost webhooks, a VM killed mid-job, capacity exhaustion, broker outage, fallback (DORA Art. 24–25)</td><td><code>just drill-lost-webhooks</code>, the others by hand</td><td>A deployed repository</td><td><span class="status todo">run per your test plan</span></td></tr>
+  </table>
+  <p>CI (<code>.github/workflows/ci.yml</code>) runs the first three layers on every push and pull request, plus checkov with SARIF upload to code scanning. The release workflow adds the SBOM and SLSA build provenance. The AWS layers run from a laptop with an SSO profile: the project has no CI role in AWS on purpose.</p>
+</section>
+
+<!-- ============================== IAM ============================== -->
+<section id="iam">
+  <h2><small>02 · IAM simulation</small>AWS's policy engine, without deploying</h2>
+  <p><code>tools/iamsim</code> renders the real documents offline: the account boundary, the trust policies of the shared deploy role and the entry role, the SCP and the RCP. <code>cmd/iamsim</code> then sends them to two read-only APIs:</p>
+  <ul>
+    <li><strong>Access Analyzer <code>ValidatePolicy</code></strong> on each of the five documents. Errors and security warnings fail the run. The entry role's wildcard <code>sub</code> warning is expected and labelled as such: the tagger checks the repository.</li>
+    <li><strong><code>iam:SimulateCustomPolicy</code></strong> with the request context of each case: principal ARN, principal tags, request tags, tag keys, resource tags and permissions boundary.</li>
+  </ul>
+  <div class="grid">
+    <div class="card ok"><h4>Own resources: allowed</h4><p>Functions, MicroVM image and VMs, queues, tables, log groups, parameters, platform secrets, <code>gha/&lt;owner&gt;/&lt;repo&gt;/</code> job data, data tagged with its id, its state prefix, roles of its own with the boundary and its tags, the broker.</p></div>
+    <div class="card bad"><h4>Another repository: denied</h4><p>The same list for repository B, B's registry entry, roles named or tagged for B, tagging B's function with A's id.</p></div>
+    <div class="card bad"><h4>The platform: denied</h4><p>Broker and tagger functions, the tagger's replay table, the GitHub App key, writing the registry, shell tokens, removing a boundary, editing the shared deploy role.</p></div>
+    <div class="card bad"><h4>Stolen tags: denied</h4><p>Deploy-B or a runtime role of B carrying A's tags, an unrelated role tagged as A, the entry and tagger roles tagged as A. Tags only count on a role named for them.</p></div>
+    <div class="card ok"><h4>SCP: the tagger alone</h4><p>Only the tagger may set <code>gha-*</code> session tags. Other session tags stay allowed. Only administrators change the platform roles.</p></div>
+    <div class="card ok"><h4>Size</h4><p>The boundary must stay under IAM's 6,144-character limit, whatever the number of repositories: 6,028 today. Terraform also refuses a plan above it.</p></div>
+  </div>
+<pre><span class="c"># read-only: SimulateCustomPolicy and ValidatePolicy, nothing is created</span>
+just iam-sim
+<span class="c"># or print the requests without calling AWS</span>
+terraform -chdir=tools/iamsim output -json policies | go run ./cmd/iamsim -dump</pre>
+</section>
+
+<!-- ============================== SANDBOX ============================== -->
+<section id="sandbox">
+  <h2><small>03 · Sandbox</small>A throw-away landing zone in one account</h2>
+  <p><code>examples/sandbox</code> stands in for the landing zone with a small VPC and one NAT gateway (about $1–2 a day). It applies <code>bootstrap</code> with the tagger enabled, builds the runner image, and deploys one repository. Every resource is tagged <code>purpose=microvm-runner-sandbox</code>.</p>
+  <ol class="steps">
+    <li><strong>Pin the test repository (optional, recommended):</strong> <code>export TF_VAR_github_ids='{owner_id=&lt;id&gt;,repository_id=&lt;id&gt;}'</code>, from <code>gh api repos/&lt;owner&gt;/&lt;repo&gt; --jq '.owner.id,.id'</code>. The deploy role then trusts exactly the immutable OIDC subject.</li>
+    <li><strong>Up:</strong> <code>just sandbox-up &lt;owner/repo&gt; eu-central-1 false</code> (<code>false</code> when the account already has the GitHub OIDC provider). About 15 minutes, mostly the image build.</li>
+    <li><strong>Smoke:</strong> <code>just sandbox-smoke eu-central-1</code>, then <code>aws logs tail &lt;log_group&gt; --since 15m</code> for the VM's own log.</li>
+    <li><strong>End to end:</strong> <code>just sandbox-e2e &lt;owner/repo&gt;</code> (next section).</li>
+    <li><strong>Down, always:</strong> <code>just sandbox-down &lt;owner/repo&gt; eu-central-1 false</code>. Then check that nothing tagged <code>purpose=microvm-runner-sandbox</code> is left: the tagging API keeps stale ARNs for a while, so look each one up. KMS keys stay pending deletion for 7 days and aren't billed meanwhile.</li>
+  </ol>
+  <p>On Windows, prefix the recipes with <code>win::</code> (PowerShell 7).</p>
+</section>
+
+<!-- ============================== E2E ============================== -->
+<section id="e2e">
+  <h2><small>04 · End to end</small>A real GitHub workflow, both deploy paths</h2>
+  <p><code>just sandbox-e2e</code> copies <code>examples/sandbox/e2e/e2e.yml</code> and <code>e2e-checks.sh</code> to the test repository, creates its <code>runners</code> Environment, and dispatches the workflow with the sandbox's outputs. Two jobs run in parallel on GitHub-hosted runners:</p>
+  <div class="grid">
+    <div class="card ok"><h4>phase1 · per-repository role</h4><p><code>configure-aws-credentials</code> assumes <code>gha-microvm-deploy-&lt;id&gt;</code> with GitHub's OIDC token. The session must be that role.</p></div>
+    <div class="card ok"><h4>phase2 · entry role and tagger</h4><p>The job assumes <code>gha-microvm-deploy-entry</code>, asks GitHub for a second token with audience <code>gha-microvm-tagger</code>, and exchanges it with the tagger for a session of <code>gha-microvm-deploy</code> tagged with the repository.</p></div>
+  </div>
+  <h3>Checks</h3>
+  <table>
+    <tr><th>Check</th><th>Expected</th><th>Path</th></tr>
+    <tr><td>Tagger with a token for the STS audience</td><td>denied</td><td>phase2</td></tr>
+    <tr><td>Tagger with the right token</td><td>session issued</td><td>phase2</td></tr>
+    <tr><td>The same token again</td><td>denied (replay)</td><td>phase2</td></tr>
+    <tr><td>Read own registry entry, platform configuration</td><td>allowed</td><td>both</td></tr>
+    <tr><td>Write and delete an object under own state prefix</td><td>allowed</td><td>both</td></tr>
+    <tr><td>Create a role of its own (boundary, own tags), then delete it</td><td>allowed</td><td>both</td></tr>
+    <tr><td>Another repository's registry entry or state prefix</td><td>denied</td><td>both</td></tr>
+    <tr><td>Create a role without the boundary, with foreign tags, or named for another repository</td><td>denied</td><td>both</td></tr>
+    <tr><td>Retag its own role to another repository, remove its boundary</td><td>denied</td><td>both</td></tr>
+    <tr><td>Invoke the tagger, update the broker, read the GitHub App key</td><td>denied</td><td>both</td></tr>
+  </table>
+  <p>Run on 2026-11-21 from <code>aws-abaschen/microvm-runner-sandbox</code>: 3 tagger checks and 17 per path, 37 in all, every one passing.</p>
+</section>
+
+<!-- ============================== FOUND ============================== -->
+<section id="found">
+  <h2><small>05 · Findings</small>What the AWS layers caught</h2>
+  <p>Every one of these passed unit tests and <code>terraform validate</code>. Each is now covered by a test.</p>
+  <table>
+    <tr><th>Found by</th><th>Problem</th><th>Fix</th></tr>
+    <tr><td>End to end</td><td>New GitHub repositories sign in with the immutable subject <code>repo:&lt;owner&gt;@&lt;owner_id&gt;/&lt;repo&gt;@&lt;repository_id&gt;:…</code>. Neither deploy role matched it, so no real deploy could have signed in.</td><td>Both forms accepted. Optional pinned ids make the trust exact, and the tagger checks the pinned id.</td></tr>
+    <tr><td>End to end</td><td>The bucket policy denied every upload without an <code>aws:kms</code> header, Terraform state included. <code>StringNotEqualsIfExists</code>, like any negated operator, also matches a missing key.</td><td>Deny only a present, wrong header (<code>Null</code> test plus <code>StringNotEquals</code>). The consumer example drops <code>encrypt = true</code>, which sends <code>AES256</code>.</td></tr>
+    <tr><td>Review, confirmed by IAM simulation</td><td>The boundary's permissions followed the tags, so deploy-B retagged with A's id would act as A.</td><td><code>TagMatchesName</code>: a tag only counts on a role named for it.</td></tr>
+    <tr><td>Access Analyzer</td><td><code>sts:SetSourceIdentity</code> doesn't support <code>aws:RequestTag</code>, so those conditions would have been ignored for it.</td><td>Its own trust statement.</td></tr>
+    <tr><td>Sandbox</td><td>Connector operator trust, KMS key policy for the MicroVM service, boundary size, image build dependencies.</td><td>See the CHANGELOG.</td></tr>
+  </table>
+</section>
+
+<!-- ============================== GAPS ============================== -->
+<section id="gaps">
+  <h2><small>06 · Gaps</small>Not covered yet</h2>
+  <ul>
+    <li><code>lambda:CreateMicrovmImage</code> with tags from a deploy session: the sandbox builds the image as an administrator.</li>
+    <li>The broker's registry lookup with a real GitHub App, and a real job end to end (webhook, dispatch, JIT runner, job, terminate).</li>
+    <li>The SCP, RCP and tag policy attached to an OU: they are simulated, not deployed.</li>
+    <li>Resilience drills on a deployed repository.</li>
+  </ul>
+</section>
+
+<!-- ============================== SAMPLES ============================== -->
+<section id="samples">
+  <h2><small>07 · Samples</small>Repositories to start from</h2>
+  <p class="lead">Copy the one that matches your role. All of them are in the <a href="https://github.com/aws-abaschen/terraform-aws-microvm-github-runners/tree/main/examples">examples</a> folder, except the live test repository.</p>
+  <div class="grid">
+    <div class="card ok">
+      <h4><a href="https://github.com/aws-abaschen/terraform-aws-microvm-github-runners/tree/main/examples/bootstrap-account">bootstrap-account</a></h4>
+      <p><strong>For the platform team, once per account and Region.</strong> Applies <code>bootstrap</code> in a landing-zone VPC without NAT, with central endpoints and egress. Onboards two repositories (one pinned to its GitHub ids) and enables the tagger for an owner. Outputs the deploy roles, the tagger and the App secret to fill in.</p>
+    </div>
+    <div class="card ok">
+      <h4><a href="https://github.com/aws-abaschen/terraform-aws-microvm-github-runners/tree/main/examples/consumer-repo">consumer-repo</a></h4>
+      <p><strong>For an application repository.</strong> <code>infra/runners</code> holds the <code>runner-image</code> and <code>repo-runner</code> modules and the S3 backend.</p>
+      <p><code>deploy-runners.yml</code>: per-repository deploy role, release checksum and attestation checks, plan archived as the change record, apply.<br>
+      <code>deploy-runners-tagger.yml</code>: the same through the entry role and the tagger.<br>
+      <code>ci.yml</code>: jobs on <code>[self-hosted, linux, arm64, microvm]</code>, with a job secret under <code>gha/&lt;owner&gt;/&lt;repo&gt;/</code>.</p>
+    </div>
+    <div class="card warn">
+      <h4><a href="https://github.com/aws-abaschen/terraform-aws-microvm-github-runners/tree/main/examples/sandbox">sandbox</a></h4>
+      <p><strong>For trying it out and for testing.</strong> A whole landing zone stand-in, bootstrap, image and one repository in a single account, with the smoke test outputs and the end-to-end workflow under <code>e2e/</code>. Costs about $1–2 a day: tear it down after use.</p>
+    </div>
+    <div class="card ok">
+      <h4><a href="https://github.com/aws-abaschen/terraform-aws-microvm-github-runners/tree/main/tools/iamsim">tools/iamsim</a></h4>
+      <p><strong>For reviewing IAM changes.</strong> Renders the boundary, trust policies and guardrails with placeholder ids and checks them with <code>cmd/iamsim</code>. Add a case there with every change to the boundary or the SCP.</p>
+    </div>
+    <div class="card">
+      <h4>microvm-runner-sandbox <span class="pill">private</span></h4>
+      <p><strong>The live test repository</strong> in the <code>aws-abaschen</code> organization. It holds only the end-to-end workflow that <code>just sandbox-e2e</code> pushes and its <code>runners</code> Environment. Use any repository of your own the same way: create it, then pass its name to the sandbox recipes.</p>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  aws-abaschen · <a href="https://github.com/aws-abaschen/terraform-aws-microvm-github-runners">source</a> · MIT
+</footer>
+</body>
+</html>

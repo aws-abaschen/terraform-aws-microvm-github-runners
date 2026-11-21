@@ -99,6 +99,12 @@ drill-lost-webhooks queue_url:
 
 sandbox := "examples/sandbox"
 
+# Check the account boundary, trust policies and guardrails with AWS's policy engine (read-only APIs, nothing deployed)
+iam-sim:
+    terraform -chdir=tools/iamsim init -input=false >/dev/null
+    terraform -chdir=tools/iamsim apply -auto-approve -input=false >/dev/null
+    terraform -chdir=tools/iamsim output -json policies | go run ./cmd/iamsim
+
 # Deploy the sandbox: VPC + NAT, bootstrap, image and one repository (≈ $1–2/day; run sandbox-down after)
 sandbox-up repository region="eu-central-1" oidc="true": package (image-artifact "arm64")
     terraform -chdir={{sandbox}} init -input=false

@@ -15,6 +15,8 @@ All notable changes follow [Conventional Commits](https://www.conventionalcommit
 - Module `org-guardrails`: SCP, RCP and tag policy for the repository tags.
 - OIDC deploy roles tagged with the repository.
 - Phase 2 tagger (`bootstrap.tagger_github_owners`): a function that exchanges a GitHub OIDC token for a session of one shared deploy role tagged with the repository, after checking the signature, owner, registry entry, environment and replay. `per_repository_deploy_roles = false` removes the per-repository deploy roles. Example workflow `deploy-runners-tagger.yml`.
+- `just iam-sim` (`cmd/iamsim`, `tools/iamsim`): renders the boundary, the phase 2 trust policies and the guardrails offline and checks them with `iam:SimulateCustomPolicy` (61 boundary and 11 SCP cases) and Access Analyzer. The trust policies moved into `bootstrap/policy` for this.
+- Documentation page `testing.html`: test layers, what they found, and the sample repositories.
 - `just sandbox-e2e`: an end-to-end workflow in the sandbox test repository that checks both deploy paths against real AWS.
 - Alarms, runbooks, resilience drills and DORA mapping.
 - CI (tests, lint, govulncheck, tflint, checkov) and release with SBOM and build provenance.

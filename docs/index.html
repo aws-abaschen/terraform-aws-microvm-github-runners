@@ -17,6 +17,7 @@
     <a href="iam.html">IAM design</a>
     <a href="operations.html">Operations</a>
     <a href="dora.html">DORA</a>
+    <a href="testing.html">Tests &amp; samples</a>
     <a href="https://github.com/aws-abaschen/terraform-aws-microvm-github-runners">GitHub</a>
   </div>
 </div>
@@ -27,6 +28,7 @@
   <p>Each repository deploys its own runners into its own AWS account with Terraform. Every job gets a fresh Firecracker VM in your VPC, runs for at most one hour, can read only that repository's secrets, and is then destroyed. Built for landing zones without NAT, with central egress and VPC endpoints.</p>
 </header>
 
+
 <nav><ul>
   <li><a href="#decisions">Decisions</a></li>
   <li><a href="#architecture">Architecture</a></li>
@@ -36,9 +38,11 @@
   <li><a href="#modules">Terraform</a></li>
   <li><a href="#onboarding">Onboarding</a></li>
   <li><a href="#costs">Costs &amp; limits</a></li>
+  <li><a href="testing.html">Tests &amp; samples</a></li>
 </ul></nav>
 
 <main>
+<div class="callout"><p><strong>Tested against real AWS and a real GitHub workflow.</strong> Unit tests, IAM policy simulation, a sandbox smoke test and an end-to-end run through both deploy paths. See <a href="testing.html">Tests &amp; samples</a> for how each layer works, what it caught, and the sample repositories to start from.</p></div>
 
 <!-- ============================== DECISIONS ============================== -->
 <section id="decisions">
@@ -347,12 +351,13 @@
 <section id="modules">
   <h2><small>05 · Terraform</small>Modules and inputs</h2>
 <pre><span class="c"># repository layout</span>
-cmd/lambda/          <span class="c"># one Go binary: webhook | dispatcher | sweeper | broker</span>
+cmd/lambda/          <span class="c"># one Go binary: webhook | dispatcher | sweeper | broker | tagger</span>
 cmd/supervisor/      <span class="c"># runs in the MicroVM: hooks, JIT fetch, dockerd, run.sh</span>
 internal/            <span class="c"># broker, runner (dispatch + sweep), github, webhook, awsx</span>
 image/Dockerfile     <span class="c"># FROM public.ecr.aws/lambda/microvms:al2023-minimal</span>
 modules/bootstrap/   modules/runner-image/   modules/repo-runner/
-examples/            <span class="c"># bootstrap-account, consumer-repo (infra + workflows)</span>
+examples/            <span class="c"># bootstrap-account, consumer-repo (infra + workflows), sandbox (+ e2e)</span>
+tools/iamsim/        <span class="c"># renders the IAM documents for cmd/iamsim (just iam-sim)</span>
 justfile             <span class="c"># check · test · package · image-artifact · release-assets · deploy · drills</span></pre>
 
   <h3>Providers</h3>
@@ -394,7 +399,7 @@ justfile             <span class="c"># check · test · package · image-artifac
     <li><strong>Platform, once per account:</strong> apply <code>bootstrap</code> with the VPC, subnets and the list of repositories. Put <code>{"app_id":…,"private_key":"…"}</code> into the <code>github_app_secret_arn</code> secret out of band.</li>
     <li><strong>GitHub App:</strong> grant repository permissions <em>Administration: write</em> and <em>Actions: read</em>, install it only on onboarded repositories.</li>
     <li><strong>Repository:</strong> create the <code>runners</code> Environment (required reviewers, <code>main</code> only), and set the variables <code>RUNNERS_DEPLOY_ROLE_ARN</code>, <code>RUNNERS_STATE_BUCKET</code> and <code>RUNNERS_STATE_KEY</code> from the bootstrap outputs.</li>
-    <li><strong>Deploy:</strong> copy <code>examples/consumer-repo</code>. The workflow verifies release checksums and attestations, plans, archives the plan and applies it.</li>
+    <li><strong>Deploy:</strong> copy <code>examples/consumer-repo</code> (all samples: <a href="testing.html#samples">Tests &amp; samples</a>). The workflow verifies release checksums and attestations, plans, archives the plan and applies it.</li>
     <li><strong>Webhook:</strong> add a repository webhook to <code>webhook_url</code> with content type JSON, only the <em>Workflow jobs</em> event, and the secret from <code>webhook_secret_arn</code>.</li>
     <li><strong>Use it:</strong> <code>runs-on: [self-hosted, linux, arm64, microvm]</code> and <code>timeout-minutes: 60</code>.</li>
   </ol>

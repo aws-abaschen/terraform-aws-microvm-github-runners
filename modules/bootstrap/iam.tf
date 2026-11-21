@@ -32,6 +32,9 @@ module "policy" {
   broker_function_arn    = aws_lambda_function.broker.arn
   app_secret_arn         = aws_secretsmanager_secret.app.arn
   additional_job_actions = var.additional_job_actions
+  oidc_provider_arn      = local.oidc_provider_arn
+  github_oidc_host       = var.github_oidc_host
+  tagger_github_owners   = var.tagger_github_owners
 }
 
 resource "aws_iam_policy" "boundary" {

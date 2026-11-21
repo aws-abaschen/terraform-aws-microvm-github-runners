@@ -5,7 +5,7 @@
 #   tagger   --sts:AssumeRole + session tags gha-repo-id, gha-repo--> <prefix>-deploy
 #
 # The shared deploy role gets its repository only from session tags, and only
-# the tagger can set them (trust policy here, DenyRepoSessionTags in the SCP).
+# the tagger can set them (trust policy in policy/trust.tf, DenyRepoSessionTags in the SCP).
 # Onboarding then means writing a registry entry: no role, no policy change.
 
 locals {
@@ -13,58 +13,15 @@ locals {
   tagger_audience = "${local.prefix}-tagger"
   tagger_n        = local.tagger ? 1 : 0
   deploy_shared   = "arn:${local.partition}:iam::${local.account}:role/${local.prefix}-deploy"
-  tagger_role     = "arn:${local.partition}:iam::${local.account}:role/${local.prefix}-tagger"
 }
 
 # ---------------------------------------------------------------- Shared deploy role
-
-data "aws_iam_policy_document" "deploy_shared_trust" {
-  statement {
-    sid     = "TaggedByTagger"
-    actions = ["sts:AssumeRole", "sts:TagSession"]
-    principals {
-      type        = "AWS"
-      identifiers = [local.tagger_role]
-    }
-    # Both repository tags, and nothing else: without them the policy
-    # variables of the boundary would not resolve.
-    condition {
-      test     = "Null"
-      variable = "aws:RequestTag/gha-repo-id"
-      values   = ["false"]
-    }
-    condition {
-      test     = "Null"
-      variable = "aws:RequestTag/gha-repo"
-      values   = ["false"]
-    }
-    condition {
-      test     = "ForAllValues:StringEquals"
-      variable = "aws:TagKeys"
-      values   = ["gha-repo-id", "gha-repo"]
-    }
-  }
-  # SetSourceIdentity doesn't support the tag keys: its own statement.
-  statement {
-    sid     = "SourceIdentity"
-    actions = ["sts:SetSourceIdentity"]
-    principals {
-      type        = "AWS"
-      identifiers = [local.tagger_role]
-    }
-    condition {
-      test     = "Null"
-      variable = "sts:SourceIdentity"
-      values   = ["false"]
-    }
-  }
-}
 
 resource "aws_iam_role" "deploy_shared" {
   count                = local.tagger_n
   name                 = "${local.prefix}-deploy"
   description          = "Shared deploy role; the tagger sets the repository as session tags"
-  assume_role_policy   = data.aws_iam_policy_document.deploy_shared_trust.json
+  assume_role_policy   = module.policy.deploy_shared_trust_json
   permissions_boundary = aws_iam_policy.boundary.arn
   max_session_duration = 3600
   # No gha-* role tags: the session tags are the only source of the repository.
@@ -80,35 +37,11 @@ resource "aws_iam_role_policy_attachment" "deploy_shared" {
 
 # ---------------------------------------------------------------- Entry role
 
-data "aws_iam_policy_document" "deploy_entry_trust" {
-  # checkov:skip=CKV_AWS_358:sub is limited to environment jobs of the allowed owners; the tagger checks the repository and environment against the registry.
-  statement {
-    actions = ["sts:AssumeRoleWithWebIdentity"]
-    principals {
-      type        = "Federated"
-      identifiers = [local.oidc_provider_arn]
-    }
-    condition {
-      test     = "StringEquals"
-      variable = "${var.github_oidc_host}:aud"
-      values   = ["sts.amazonaws.com"]
-    }
-    # Both default subject forms: repo:<owner>/... and the immutable
-    # repo:<owner>@<owner_id>/... that new repositories get. An organisation
-    # with another sub template must adapt this; the tagger never reads sub.
-    condition {
-      test     = "StringLike"
-      variable = "${var.github_oidc_host}:sub"
-      values   = flatten([for o in var.tagger_github_owners : ["repo:${o}/*:environment:*", "repo:${o}@*/*:environment:*"]])
-    }
-  }
-}
-
 resource "aws_iam_role" "deploy_entry" {
   count                = local.tagger_n
   name                 = "${local.prefix}-deploy-entry"
   description          = "First hop of repository deploys: may only invoke the tagger"
-  assume_role_policy   = data.aws_iam_policy_document.deploy_entry_trust.json
+  assume_role_policy   = module.policy.deploy_entry_trust_json
   permissions_boundary = var.permissions_boundary_arn
   max_session_duration = 3600
   tags                 = local.tags
