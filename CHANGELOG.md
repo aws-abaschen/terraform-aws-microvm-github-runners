@@ -13,3 +13,11 @@ All notable changes follow [Conventional Commits](https://www.conventionalcommit
 - Per-repository permissions boundaries and OIDC deploy roles.
 - Alarms, runbooks, resilience drills and DORA mapping.
 - CI (tests, lint, govulncheck, tflint, checkov) and release with SBOM and build provenance.
+
+### Fixed
+
+- Network connector operator role: trust `lambda.amazonaws.com` without `aws:SourceAccount`, which `CreateNetworkConnector` rejects.
+- KMS key policy: allow the Lambda service principal to build and launch MicroVM images; dispatcher gets `kms:ReEncrypt*`.
+- Repository boundary policy: under the IAM limit of 6,144 characters, with a plan-time check.
+- MicroVM image: `install_weak_deps=0` for microdnf, OpenSSL from the base image's `openssl-snapsafe-libs`.
+- Windows recipes: quote Terraform arguments for PowerShell.

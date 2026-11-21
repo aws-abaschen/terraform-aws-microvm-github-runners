@@ -74,7 +74,7 @@ data "aws_iam_policy_document" "control" {
   }
   statement {
     sid       = "Key"
-    actions   = ["kms:Encrypt", "kms:Decrypt", "kms:GenerateDataKey*", "kms:DescribeKey", "kms:CreateGrant"]
+    actions   = ["kms:Encrypt", "kms:Decrypt", "kms:GenerateDataKey*", "kms:ReEncrypt*", "kms:DescribeKey", "kms:CreateGrant"]
     resources = [local.kms]
   }
   statement {

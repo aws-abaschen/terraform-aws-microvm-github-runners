@@ -39,12 +39,9 @@ On Windows prefix the sandbox recipes with `win::` (e.g. `just win::sandbox-up �
 
 1. `just sandbox-up aws-abaschen/microvm-runner-sandbox eu-central-1 false` (about 15 minutes, the image build is slow).
 2. `just sandbox-smoke eu-central-1`, then read the VM logs (`aws logs tail <log_group> --since 15m`).
-3. Fix whatever fails. Unverified assumptions to check first:
-   - MicroVM execution role trust principal `lambda.amazonaws.com` (modules/repo-runner/iam.tf).
-   - Lifecycle hooks fire with the `NO_INGRESS` connector.
-   - KMS key on `RunMicrovm` (`KmsKeyIdentifier`) works with the dispatcher's permissions.
-   - Network connector operator role trust (both `lambda.amazonaws.com` and `network-connectors.lambda.amazonaws.com` are allowed).
-   - IMDS credentials inside the VM (default SDK chain).
+3. Status (2026-11-21): smoke test passes (5/5) after fixes to the connector trust, KMS key policy, boundary size and Dockerfile.
+   Verified: execution role trust `lambda.amazonaws.com`, run and terminate hooks with `NO_INGRESS`, KMS on `RunMicrovm`, connector operator trust (`lambda.amazonaws.com` only, no `aws:SourceAccount`), IMDS credentials in the VM.
+   Still unverified: `RunMicrovm` with the dispatcher's own role (the smoke test runs as admin), dockerd readiness inside the VM, a real job end to end.
 4. Always finish with `just sandbox-down aws-abaschen/microvm-runner-sandbox eu-central-1 false` so nothing keeps costing money (NAT gateway ≈ $1–2/day). Check nothing tagged `purpose=microvm-runner-sandbox` is left.
 5. If the smoke test passes: optional end-to-end test with a GitHub App on a private test repo, then tag `v0.1.0` (the release workflow builds assets, SBOM and provenance).
 

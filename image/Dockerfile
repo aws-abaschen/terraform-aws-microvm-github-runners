@@ -6,11 +6,12 @@ FROM public.ecr.aws/lambda/microvms:al2023-minimal
 ARG ENABLE_DOCKER=true
 
 # Runner dependencies (.NET runtime needs icu/krb5/openssl/zlib) and common CI tools.
+# OpenSSL comes from the base image's openssl-snapsafe-libs, which conflicts with openssl-libs.
 RUN set -eux; \
     PKG="$(command -v dnf || command -v microdnf)"; \
-    "$PKG" install -y --setopt=install_weak_deps=False \
+    "$PKG" install -y --setopt=install_weak_deps=0 \
       shadow-utils tar gzip unzip git jq findutils which hostname procps-ng \
-      libicu krb5-libs openssl-libs zlib ca-certificates; \
+      libicu krb5-libs zlib ca-certificates; \
     if [ "$ENABLE_DOCKER" = "true" ]; then "$PKG" install -y docker iptables-nft; fi; \
     "$PKG" clean all; rm -rf /var/cache/dnf
 

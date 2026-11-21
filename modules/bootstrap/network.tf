@@ -29,17 +29,15 @@ resource "aws_vpc_security_group_egress_rule" "https_prefix_list" {
 # ---------------------------------------------------------------- MicroVM egress connector
 
 data "aws_iam_policy_document" "operator_trust" {
+  # checkov:skip=CKV_AWS_358:not a web identity trust.
   statement {
     actions = ["sts:AssumeRole"]
     principals {
       type = "Service"
-      # AWS documents both principals for the connector operator role.
-      identifiers = ["lambda.amazonaws.com", "network-connectors.lambda.amazonaws.com"]
-    }
-    condition {
-      test     = "StringEquals"
-      variable = "aws:SourceAccount"
-      values   = [local.account]
+      # As documented by AWS. CreateNetworkConnector rejects this role when the
+      # trust has an aws:SourceAccount condition (verified in the sandbox), so
+      # there is none: the role only carries the managed operator policy.
+      identifiers = ["lambda.amazonaws.com"]
     }
   }
 }

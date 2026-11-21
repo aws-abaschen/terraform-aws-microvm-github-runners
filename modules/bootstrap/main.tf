@@ -47,6 +47,33 @@ data "aws_iam_policy_document" "kms" {
       values   = ["arn:${local.partition}:logs:${local.region}:${local.account}:*"]
     }
   }
+  # Lambda MicroVMs builds and launches images and rotates the run hook payload
+  # key with its own service credentials (it uses no grants). Scoped to this
+  # account's images, as documented in "Encrypting AWS Lambda MicroVM data".
+  statement {
+    sid       = "LambdaMicrovms"
+    actions   = ["kms:GenerateDataKey", "kms:GenerateDataKeyWithoutPlaintext", "kms:Decrypt", "kms:ReEncrypt*"]
+    resources = ["*"]
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [local.account]
+    }
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = ["arn:${local.partition}:lambda:${local.region}:${local.account}:microvm-image:*"]
+    }
+    condition {
+      test     = "StringLike"
+      variable = "kms:EncryptionContext:aws:lambda:MicrovmImageArn"
+      values   = ["arn:${local.partition}:lambda:${local.region}:${local.account}:microvm-image:*"]
+    }
+  }
   statement {
     sid       = "CloudWatchAlarmsToEncryptedSNS"
     actions   = ["kms:Decrypt", "kms:GenerateDataKey*"]

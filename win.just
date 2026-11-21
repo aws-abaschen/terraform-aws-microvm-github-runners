@@ -46,8 +46,8 @@ image-artifact arch="arm64" docker="true":
 # Deploy the sandbox: VPC + NAT, bootstrap, image and one repository (≈ $1–2/day; run sandbox-down after)
 sandbox-up repository region="eu-central-1" oidc="true": package (image-artifact "arm64")
     terraform -chdir={{sandbox}} init -input=false; if ($LASTEXITCODE) { exit 1 }
-    terraform -chdir={{sandbox}} apply -input=false -auto-approve -var repository={{repository}} -var region={{region}} -var create_github_oidc_provider={{oidc}} -target=module.bootstrap; if ($LASTEXITCODE) { exit 1 }
-    terraform -chdir={{sandbox}} apply -input=false -auto-approve -var repository={{repository}} -var region={{region}} -var create_github_oidc_provider={{oidc}}
+    terraform -chdir={{sandbox}} apply -input=false -auto-approve '-var=repository={{repository}}' '-var=region={{region}}' '-var=create_github_oidc_provider={{oidc}}' '-target=module.bootstrap'; if ($LASTEXITCODE) { exit 1 }
+    terraform -chdir={{sandbox}} apply -input=false -auto-approve '-var=repository={{repository}}' '-var=region={{region}}' '-var=create_github_oidc_provider={{oidc}}'
 
 # Launch one MicroVM like the dispatcher does and verify start, role, KMS, VPC path and terminate
 sandbox-smoke region="eu-central-1":
@@ -55,4 +55,4 @@ sandbox-smoke region="eu-central-1":
 
 # Destroy everything the sandbox created
 sandbox-down repository region="eu-central-1" oidc="true":
-    terraform -chdir={{sandbox}} destroy -input=false -auto-approve -var repository={{repository}} -var region={{region}} -var create_github_oidc_provider={{oidc}}
+    terraform -chdir={{sandbox}} destroy -input=false -auto-approve '-var=repository={{repository}}' '-var=region={{region}}' '-var=create_github_oidc_provider={{oidc}}'

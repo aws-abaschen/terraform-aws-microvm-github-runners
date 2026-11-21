@@ -166,6 +166,8 @@ output "region" {
 }
 
 output "smoke" {
+  # Only names and ARNs, but some come from the SSM platform configuration, which is sensitive.
+  sensitive = true
   value = {
     image_arn       = module.image.image_arn
     runner_role_arn = module.runners.runner_role_arn

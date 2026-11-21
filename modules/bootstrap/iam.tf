@@ -32,18 +32,13 @@ data "aws_iam_policy_document" "repo" {
   }
   statement {
     sid       = "OwnEventSourceMappings"
-    actions   = ["lambda:CreateEventSourceMapping", "lambda:UpdateEventSourceMapping", "lambda:DeleteEventSourceMapping", "lambda:GetEventSourceMapping", "lambda:TagResource", "lambda:ListTags"]
+    actions   = ["lambda:*EventSourceMapping", "lambda:TagResource", "lambda:ListTags"]
     resources = ["*"]
     condition {
       test     = "ArnLike"
       variable = "lambda:FunctionArn"
       values   = ["${local.arn.lambda}:function:${each.value.base}-*"]
     }
-  }
-  statement {
-    sid       = "LambdaRead"
-    actions   = ["lambda:ListEventSourceMappings", "lambda:ListFunctions", "lambda:GetAccountSettings", "lambda:ListMicrovms", "lambda:ListMicrovmImages", "lambda:ListManagedMicrovmImages", "lambda:ListManagedMicrovmImageVersions", "lambda:GetNetworkConnector", "lambda:PassNetworkConnector", "lambda:GetCodeSigningConfig"]
-    resources = ["*"]
   }
   statement {
     sid       = "CreateOwnImage"
@@ -61,20 +56,17 @@ data "aws_iam_policy_document" "repo" {
     resources = ["${local.arn.lambda}:microvm-image:${each.value.base}*"]
   }
   statement {
-    sid       = "CloudControlForAwscc"
-    actions   = ["cloudformation:CreateResource", "cloudformation:GetResource", "cloudformation:UpdateResource", "cloudformation:DeleteResource", "cloudformation:GetResourceRequestStatus", "cloudformation:ListResources"]
-    resources = ["*"]
-  }
-  statement {
     sid       = "TokenBroker"
     actions   = ["lambda:InvokeFunction"]
     resources = [aws_lambda_function.broker.arn]
   }
   statement {
     sid = "OwnRoles"
-    actions = ["iam:GetRole", "iam:UpdateRole", "iam:DeleteRole", "iam:TagRole", "iam:UntagRole", "iam:PutRolePolicy", "iam:DeleteRolePolicy",
-      "iam:GetRolePolicy", "iam:ListRolePolicies", "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:ListAttachedRolePolicies",
-    "iam:UpdateAssumeRolePolicy", "iam:ListInstanceProfilesForRole", "iam:PassRole", "iam:ListRoleTags"]
+    actions = [
+      "iam:GetRole", "iam:UpdateRole", "iam:DeleteRole", "iam:TagRole", "iam:UntagRole", "iam:UpdateAssumeRolePolicy", "iam:PassRole",
+      "iam:*RolePolicy", # Put, Get, Delete, Attach, Detach
+      "iam:List*",       # role policies, attached policies, instance profiles, tags of own roles
+    ]
     resources = ["${local.arn.iam}:role/${each.value.base}-*"]
   }
   statement {
@@ -88,11 +80,6 @@ data "aws_iam_policy_document" "repo" {
     }
   }
   statement {
-    sid       = "ReadManagedPolicies"
-    actions   = ["iam:GetPolicy", "iam:GetPolicyVersion", "iam:ListPolicyVersions"]
-    resources = ["*"]
-  }
-  statement {
     sid       = "OwnQueues"
     actions   = ["sqs:*"]
     resources = ["arn:${local.partition}:sqs:${local.region}:${local.account}:${each.value.base}-*"]
@@ -104,23 +91,18 @@ data "aws_iam_policy_document" "repo" {
   }
   statement {
     sid       = "OwnParameters"
-    actions   = ["ssm:PutParameter", "ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath", "ssm:DeleteParameter", "ssm:AddTagsToResource", "ssm:ListTagsForResource", "ssm:RemoveTagsFromResource"]
+    actions   = ["ssm:*"]
     resources = ["${local.arn.ssm}:parameter/${local.prefix}/${each.value.id}/*"]
   }
   statement {
     sid       = "JobParameters"
-    actions   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
+    actions   = ["ssm:GetParameter*"]
     resources = [for p in coalesce(each.value.job_parameter_paths, ["/gha/${each.key}/"]) : "${local.arn.ssm}:parameter${trimsuffix(p, "/")}/*"]
   }
   statement {
     sid       = "PlatformConfig"
     actions   = ["ssm:GetParameter"]
     resources = ["${local.arn.ssm}:parameter/${local.prefix}/platform/config"]
-  }
-  statement {
-    sid       = "ParameterMeta"
-    actions   = ["ssm:DescribeParameters"]
-    resources = ["*"]
   }
   statement {
     sid       = "OwnSecrets"
@@ -133,11 +115,6 @@ data "aws_iam_policy_document" "repo" {
     resources = [for p in coalesce(each.value.job_secret_prefixes, ["gha/${each.key}/"]) : "${local.arn.sm}:secret:${trimsuffix(p, "/")}/*"]
   }
   statement {
-    sid       = "SecretsRead"
-    actions   = ["secretsmanager:GetRandomPassword"]
-    resources = ["*"]
-  }
-  statement {
     sid     = "OwnLogs"
     actions = ["logs:*"]
     resources = [
@@ -146,13 +123,8 @@ data "aws_iam_policy_document" "repo" {
     ]
   }
   statement {
-    sid       = "LogsRead"
-    actions   = ["logs:DescribeLogGroups", "logs:ListTagsForResource"]
-    resources = ["*"]
-  }
-  statement {
     sid       = "OwnArtifactsAndState"
-    actions   = ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject", "s3:DeleteObject", "s3:GetObjectTagging", "s3:PutObjectTagging"]
+    actions   = ["s3:*Object", "s3:GetObjectVersion", "s3:*ObjectTagging"]
     resources = [for b in aws_s3_bucket.this : "${b.arn}/${each.value.id}/*"]
   }
   statement {
@@ -182,18 +154,23 @@ data "aws_iam_policy_document" "repo" {
   }
   statement {
     sid       = "OwnAlarms"
-    actions   = ["cloudwatch:PutMetricAlarm", "cloudwatch:DeleteAlarms", "cloudwatch:DescribeAlarms", "cloudwatch:TagResource", "cloudwatch:UntagResource", "cloudwatch:ListTagsForResource"]
+    actions   = ["cloudwatch:*Alarm*", "cloudwatch:*Resource"]
     resources = ["arn:${local.partition}:cloudwatch:${local.region}:${local.account}:alarm:${each.value.base}-*"]
   }
+  # Actions without resource-level permissions, or read-only, in one statement:
+  # the policy is also a permissions boundary and must stay under 6,144 characters.
   statement {
-    sid       = "Telemetry"
-    actions   = ["cloudwatch:PutMetricData", "cloudwatch:DescribeAlarms", "xray:PutTraceSegments", "xray:PutTelemetryRecords", "sts:GetCallerIdentity"]
-    resources = ["*"]
-  }
-  statement {
-    sid = "VpcLambda"
-    actions = ["ec2:CreateNetworkInterface", "ec2:DeleteNetworkInterface", "ec2:DescribeNetworkInterfaces", "ec2:AssignPrivateIpAddresses",
-    "ec2:UnassignPrivateIpAddresses", "ec2:DescribeSubnets", "ec2:DescribeSecurityGroups", "ec2:DescribeVpcs"]
+    sid = "Unscoped"
+    actions = [
+      "lambda:List*", "lambda:GetAccountSettings", "lambda:GetNetworkConnector", "lambda:PassNetworkConnector", "lambda:GetCodeSigningConfig",
+      "cloudformation:CreateResource", "cloudformation:GetResource", "cloudformation:UpdateResource", "cloudformation:DeleteResource",
+      "cloudformation:GetResourceRequestStatus", "cloudformation:ListResources", # Cloud Control, used by the awscc provider
+      "iam:GetPolicy", "iam:GetPolicyVersion", "iam:ListPolicyVersions",
+      "ssm:DescribeParameters", "secretsmanager:GetRandomPassword", "logs:DescribeLogGroups", "logs:ListTagsForResource",
+      "cloudwatch:PutMetricData", "cloudwatch:DescribeAlarms", "xray:PutTraceSegments", "xray:PutTelemetryRecords", "sts:GetCallerIdentity",
+      "ec2:CreateNetworkInterface", "ec2:DeleteNetworkInterface", "ec2:DescribeNetworkInterfaces", "ec2:*PrivateIpAddresses", # VPC Lambdas
+      "ec2:DescribeSubnets", "ec2:DescribeSecurityGroups", "ec2:DescribeVpcs",
+    ]
     resources = ["*"]
   }
   dynamic "statement" {
@@ -232,6 +209,13 @@ resource "aws_iam_policy" "repo" {
   description = "Deploy policy and permissions boundary for ${each.key}"
   policy      = data.aws_iam_policy_document.repo[each.key].json
   tags        = merge(local.tags, { "gha-repo" = each.key, "gha-repo-id" = each.value.id })
+
+  lifecycle {
+    precondition {
+      condition     = length(data.aws_iam_policy_document.repo[each.key].minified_json) <= 6144
+      error_message = "The boundary policy of ${each.key} exceeds the IAM limit of 6,144 characters: shorten job_parameter_paths, job_secret_prefixes or additional_job_actions."
+    }
+  }
 }
 
 data "aws_iam_policy_document" "deploy_trust" {
