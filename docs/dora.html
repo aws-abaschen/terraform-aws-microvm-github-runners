@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DORA · MicroVM GitHub Runners</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="index.html">MicroVM GitHub Runners</a>
+  <div class="links">
+    <a href="index.html">Overview</a>
+    <a href="security.html">Security</a>
+    <a href="operations.html">Operations</a>
+    <a class="active" href="dora.html">DORA</a>
+    <a href="https://github.com/aws-abaschen/terraform-aws-microvm-github-runners">GitHub</a>
+  </div>
+</div>
+<main>
+
+<section>
+  <h2><small>Compliance</small>DORA mapping</h2>
+  <p class="lead">How this component supports the Digital Operational Resilience Act (Regulation (EU) 2022/2554). DORA obligations sit with the financial entity; this page lists the evidence the component produces and what you still own.</p>
+  <div class="callout"><p>This is engineering guidance, not legal advice. Have your compliance function confirm the mapping against your ICT risk framework.</p></div>
+</section>
+
+<section>
+  <table>
+    <tr><th>DORA area</th><th>What the component provides</th><th>You still own</th></tr>
+    <tr>
+      <td><strong>Art. 6–8</strong> ICT risk framework, identification, asset inventory</td>
+      <td>Every resource is tagged <code>gha-repo</code>, <code>gha-repo-id</code>, <code>managed-by</code> plus your mandatory tags. All infrastructure is code, reviewed and versioned.</td>
+      <td>Register the runner platform as an ICT asset with owner and criticality.</td>
+    </tr>
+    <tr>
+      <td><strong>Art. 9</strong> Protection and prevention</td>
+      <td>One VM per job; least privilege with per-repo boundaries; KMS CMK with rotation on logs, queues, tables, parameters, secrets, artifacts, state and MicroVM memory; no NAT, central inspected egress; <code>NO_INGRESS</code>; secrets kept out of Terraform state; SHA-pinned actions and runner; provenance attestations and SBOM; change through reviewed Environments with archived plans.</td>
+      <td>Central firewall rules, SCPs, GitHub organisation policies, approval of changes.</td>
+    </tr>
+    <tr>
+      <td><strong>Art. 10</strong> Detection</td>
+      <td>Alarms on DLQ, queue age, Lambda errors, dispatch and sweep errors, reaped and lost VMs, silent sweeper and broker errors, all to one incident topic. Structured JSON audit events for every launch, termination, webhook rejection and token issued. X-Ray tracing.</td>
+      <td>Route the topic to your incident tool; SIEM ingestion of the audit events and CloudTrail.</td>
+    </tr>
+    <tr>
+      <td><strong>Art. 11–12</strong> Response, recovery, backup</td>
+      <td>Self-healing sweeper (lost webhooks, dead or idle VMs); SQS retries with DLQ and redrive; DynamoDB point-in-time recovery and deletion protection; versioned state and artifact buckets; documented emergency stop and fallback to GitHub-hosted runners. RTO for a full stack rebuild: one <code>terraform apply</code> (≈ 15 minutes including the image build).</td>
+      <td>AWS Backup plans for the state bucket; your BCP entry for CI/CD.</td>
+    </tr>
+    <tr>
+      <td><strong>Art. 13</strong> Learning and evolving</td>
+      <td>Runbook per alarm; reproducible releases make root-cause analysis on exact binaries possible.</td>
+      <td>Post-incident reviews.</td>
+    </tr>
+    <tr>
+      <td><strong>Art. 17–19</strong> Incident management and reporting</td>
+      <td>Timestamps, actors, job ids, commit SHAs and VM ids in the audit trail allow classification and reporting timelines.</td>
+      <td>Classification against the RTS criteria and regulator reporting.</td>
+    </tr>
+    <tr>
+      <td><strong>Art. 24–25</strong> Resilience testing</td>
+      <td>Drill recipes (<code>just drill-lost-webhooks</code>, VM failure, capacity, broker outage, fallback) on the <a href="operations.html">operations page</a>.</td>
+      <td>Run them on a schedule and keep the testing register.</td>
+    </tr>
+    <tr>
+      <td><strong>Art. 28–30</strong> ICT third-party risk</td>
+      <td>Two providers: AWS (Lambda MicroVMs) and GitHub (Actions, App). Exit strategy: workflows fall back to GitHub-hosted runners by changing <code>runs-on</code>; the platform can be removed with <code>terraform destroy</code>.</td>
+      <td>Register both providers in the register of information; contractual clauses; concentration risk assessment.</td>
+    </tr>
+  </table>
+</section>
+
+<section>
+  <h2><small>Retention</small>Log and record retention</h2>
+  <table>
+    <tr><th>Record</th><th>Default</th><th>Setting</th></tr>
+    <tr><td>Lambda, broker and MicroVM logs (incl. audit events)</td><td>400 days</td><td><code>log_retention_days</code> in <code>bootstrap</code></td></tr>
+    <tr><td>Terraform plans of each deployment</td><td>400 days</td><td><code>retention-days</code> of the plan artifact in the deploy workflow</td></tr>
+    <tr><td>State bucket noncurrent versions</td><td>400 days</td><td>Lifecycle rule in <code>bootstrap</code></td></tr>
+    <tr><td>Operational state table</td><td>30 days after a VM ends, 35 days PITR</td><td>Not an audit store</td></tr>
+  </table>
+  <p>If your policy needs longer (for example five years), raise <code>log_retention_days</code> or export logs to your organisation's log archive.</p>
+</section>
+
+</main>
+<footer>aws-abaschen · <a href="https://github.com/aws-abaschen/terraform-aws-microvm-github-runners">source</a></footer>
+</body>
+</html>

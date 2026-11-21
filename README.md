@@ -1,35 +1,51 @@
 # terraform-aws-microvm-github-runners
 
-Per-repository, ephemeral GitHub Actions runners on **AWS Lambda MicroVMs**, deployed with Terraform.
+Ephemeral, per-repository GitHub Actions runners on **AWS Lambda MicroVMs**, deployed with Terraform. Built for regulated landing zones: no NAT in workload accounts, central egress and VPC endpoints, per-repository isolation, DORA-oriented logging and runbooks.
 
-- One fresh Firecracker VM per job, terminated afterwards.
-- Jobs are capped at 1 hour.
-- Each repository deploys its own runner stack into its own target account.
-- The runner can read only `gha/<owner>/<repo>/*` secrets.
+- One Firecracker VM per job, terminated afterwards. Jobs are capped at 1 hour (configurable).
+- Each repository deploys its own runners from its own workflow, into its target account.
+- A job can only read its own repository's secrets. The GitHub App key never leaves a platform-owned token broker.
 
-📐 **Proposal and diagrams:** https://aws-abaschen.github.io/terraform-aws-microvm-github-runners/
+📐 **Docs:** https://aws-abaschen.github.io/terraform-aws-microvm-github-runners/ ([security](https://aws-abaschen.github.io/terraform-aws-microvm-github-runners/security.html), [operations](https://aws-abaschen.github.io/terraform-aws-microvm-github-runners/operations.html), [DORA](https://aws-abaschen.github.io/terraform-aws-microvm-github-runners/dora.html))
 
-## Status
+## Modules
 
-Proposal (v0.1). Implementation milestones are listed on the page.
+| Module | Applied by | Purpose |
+|---|---|---|
+| [`modules/bootstrap`](modules/bootstrap) | Platform team, once per account and Region | KMS, buckets, VPC egress connector, optional local endpoints, OIDC, per-repo boundaries and deploy roles, token broker |
+| [`modules/runner-image`](modules/runner-image) | Repository workflow | MicroVM image (arm64 or x64) with the pinned runner and Docker |
+| [`modules/repo-runner`](modules/repo-runner) | Repository workflow | Webhook, queue, dispatcher, sweeper, state, runner role, alarms |
 
-Decision: every VM runs one job and is then terminated. There is no reuse and no idle runners (ADR-001 on the page).
+See [`examples/`](examples) for a full account bootstrap and a consumer repository (Terraform + workflows).
 
-## Layout (planned)
-
-```
-modules/runner-image   awscc_lambda_microvm_image + build role
-modules/repo-runner    webhook λ, SQS+DLQ, dispatcher λ, sweeper, DynamoDB, IAM
-modules/bootstrap      GitHub OIDC provider + per-repo deploy role
-image/                 Dockerfile + Go supervisor
-lambda/                Go: webhook, dispatcher, sweeper
-docs/                  GitHub Pages site
-```
-
-## Local
+## Quick start
 
 ```sh
-just docs   # serve the proposal page on http://localhost:8000
+just check            # gofmt, go vet, go test -race, terraform validate
+just package          # dist/lambda.zip (reproducible)
+just image-artifact   # dist/image-arm64.zip (runner SHA-256 verified)
+just release-assets   # all assets + SHA256SUMS
+```
+
+Consumers use release assets: they verify `SHA256SUMS` and the build provenance with `gh attestation verify` before `terraform apply`.
+
+## Requirements
+
+- Terraform ≥ 1.11 (tested 1.17.2), providers `hashicorp/aws` ≥ 6.73, `hashicorp/awscc` ≥ 1.110, `hashicorp/random` ≥ 3.7
+- A Region with Lambda MicroVMs
+- A GitHub App with repository permissions *Administration: write* and *Actions: read*
+- Private subnets with a route to central egress (Transit Gateway) and DNS for VPC endpoints
+
+## Layout
+
+```
+cmd/lambda/       one binary: webhook | dispatcher | sweeper | broker
+cmd/supervisor/   runs in the MicroVM: lifecycle hooks, JIT fetch, dockerd, run.sh
+internal/         broker, runner (dispatch + sweep), github, webhook, awsx, obs
+image/            Dockerfile for the MicroVM image
+modules/          bootstrap, runner-image, repo-runner
+examples/         bootstrap-account, consumer-repo
+docs/             GitHub Pages site
 ```
 
 ## License

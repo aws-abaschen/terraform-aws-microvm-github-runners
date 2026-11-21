@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security · MicroVM GitHub Runners</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="index.html">MicroVM GitHub Runners</a>
+  <div class="links">
+    <a href="index.html">Overview</a>
+    <a class="active" href="security.html">Security</a>
+    <a href="operations.html">Operations</a>
+    <a href="dora.html">DORA</a>
+    <a href="https://github.com/aws-abaschen/terraform-aws-microvm-github-runners">GitHub</a>
+  </div>
+</div>
+<main>
+
+<section>
+  <h2><small>Security</small>Threat model and controls</h2>
+  <p class="lead">What an attacker controls, what they can reach, and what stops them.</p>
+  <table>
+    <tr><th>Threat</th><th>Control</th></tr>
+    <tr><td>Malicious job (PR author, compromised dependency) persists into later jobs</td><td>One Firecracker VM per job, terminated afterwards, no reuse (ADR-001). JIT runners accept exactly one job.</td></tr>
+    <tr><td>Job reads another repository's secrets</td><td>The runner role is limited to <code>gha/&lt;owner&gt;/&lt;repo&gt;/*</code> and capped by the per-repo boundary. Even a widened identity policy cannot exceed the boundary.</td></tr>
+    <tr><td>Job steals the GitHub App key</td><td>The key is readable only by the broker role. The secret's resource policy denies everyone else, and every repo boundary explicitly denies it.</td></tr>
+    <tr><td>Repository deploy role escalates (new role, removed boundary)</td><td><code>iam:CreateRole</code> requires the repo's own boundary. Removing a boundary, creating policy versions, users or access keys is denied.</td></tr>
+    <tr><td>Repository asks the broker for another repository's token</td><td>The broker runs the presigned <code>GetCallerIdentity</code> itself (regional STS host only, no SSRF). It requires the role <code>&lt;prefix&gt;-&lt;sha256(repo)[:10]&gt;-control</code> in its own account and an onboarded repository, and scopes the token to that one repository.</td></tr>
+    <tr><td>Job kills other runners</td><td>The runner role has no MicroVM permissions. The control role can only <code>Get</code>/<code>Terminate</code> VMs of its own image ARN.</td></tr>
+    <tr><td>JIT config replay or theft</td><td>Never in the run payload. Stored as a KMS <code>SecureString</code> under a per-runner name, read and deleted by the VM in <code>/run</code>, and deleted again on cleanup.</td></tr>
+    <tr><td>Forged webhook</td><td>Constant-time HMAC-SHA256 check, wrong repository rejected, 1 MB body cap. Optional <code>AWS_IAM</code> mode behind a central ingress with WAF.</td></tr>
+    <tr><td>Data exfiltration from a job</td><td>No NAT in the account. All traffic goes through the central egress and its firewall allow-list. MicroVMs use <code>NO_INGRESS</code>; shell and auth tokens are denied by the boundary.</td></tr>
+    <tr><td>Supply chain (runner, Lambda code, actions)</td><td>Runner tarball SHA-256 pinned, reproducible builds, SLSA build provenance and SBOM on every release, consumers verify with <code>gh attestation verify</code>, optional Lambda code signing, every action pinned by commit SHA.</td></tr>
+    <tr><td>Secrets in Terraform state</td><td>The webhook secret is ephemeral and written with <code>secret_string_wo</code>. The App key is set out of band. State is encrypted with KMS and versioned.</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2><small>Identities</small>Who can do what</h2>
+  <table>
+    <tr><th>Role</th><th>Used by</th><th>Can</th><th>Cannot</th></tr>
+    <tr><td><code>&lt;prefix&gt;-broker</code></td><td>Token broker (platform)</td><td>Read the App key, decrypt with the platform key</td><td>Anything else</td></tr>
+    <tr><td><code>&lt;prefix&gt;-deploy-&lt;id&gt;</code></td><td>The repo's deploy workflow (OIDC, Environment <code>runners</code>)</td><td>Create and update its own resources within the boundary</td><td>Leave its boundary, touch other ids, read the App key</td></tr>
+    <tr><td><code>&lt;prefix&gt;-&lt;id&gt;-control</code></td><td>Dispatcher, sweeper</td><td>Claim jobs, write JIT params, run and terminate its own VMs, get tokens from the broker</td><td>Read job secrets</td></tr>
+    <tr><td><code>&lt;prefix&gt;-&lt;id&gt;-webhook</code></td><td>Webhook</td><td>Read the webhook secret, send to its queue</td><td>Anything else</td></tr>
+    <tr><td><code>&lt;prefix&gt;-&lt;id&gt;-runner</code></td><td>Every job (ambient)</td><td>Read and delete its JIT param, read repo CI secrets and parameters, write runtime logs</td><td>MicroVM APIs, other repos, App key</td></tr>
+  </table>
+  <div class="callout"><p><strong>Rule for workflow authors:</strong> the runner role is available to every job, including pull requests from anyone with write access. Keep only CI-grade secrets under <code>gha/&lt;owner&gt;/&lt;repo&gt;/</code>. For deployments use GitHub OIDC with roles whose trust is bound to a protected Environment (<code>repo:&lt;owner&gt;/&lt;repo&gt;:environment:production</code>).</p></div>
+</section>
+
+<section>
+  <h2><small>Hardening checklist</small>Before production</h2>
+  <ul>
+    <li>Use private or internal repositories. For public ones, require approval for all outside contributors and never use <code>pull_request_target</code> on these runners.</li>
+    <li>Restrict the central egress firewall to GitHub, your package registries and AWS endpoints.</li>
+    <li>Prefer <code>webhook_auth_type = "AWS_IAM"</code> behind a central API Gateway with WAF if your SCPs forbid public Function URLs.</li>
+    <li>Enable Lambda code signing (<code>code_signing_config_arn</code>) and sign <code>lambda.zip</code> with AWS Signer.</li>
+    <li>Set an organisation permissions boundary on the platform roles (<code>permissions_boundary_arn</code>).</li>
+    <li>Rotate the webhook secret by bumping <code>webhook_secret_version</code>. Rotate the GitHub App key yearly in GitHub, then update the secret.</li>
+    <li>Install the GitHub App only on onboarded repositories.</li>
+  </ul>
+</section>
+
+</main>
+<footer>aws-abaschen · <a href="https://github.com/aws-abaschen/terraform-aws-microvm-github-runners">source</a></footer>
+</body>
+</html>

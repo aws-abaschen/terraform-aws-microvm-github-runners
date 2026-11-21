@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Operations · MicroVM GitHub Runners</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="index.html">MicroVM GitHub Runners</a>
+  <div class="links">
+    <a href="index.html">Overview</a>
+    <a href="security.html">Security</a>
+    <a class="active" href="operations.html">Operations</a>
+    <a href="dora.html">DORA</a>
+    <a href="https://github.com/aws-abaschen/terraform-aws-microvm-github-runners">GitHub</a>
+  </div>
+</div>
+<main>
+
+<section>
+  <h2><small>Operations</small>Runbooks</h2>
+  <p class="lead">Every alarm links here. Alarms go to the platform SNS topic (or your incident tool's topic). Fallback for any outage: switch affected workflows to GitHub-hosted runners by changing <code>runs-on</code>.</p>
+  <h3>Where to look</h3>
+  <table>
+    <tr><th>What</th><th>Where</th></tr>
+    <tr><td>Audit trail (every launch, termination, rejection, token)</td><td>CloudWatch Logs Insights on <code>/aws/lambda/gha-microvm-*</code>: <code>filter audit = 1 | fields @timestamp, event, job_id, runner_name, microvm_id, actor</code></td></tr>
+    <tr><td>Job output inside the VM</td><td><code>/aws/lambda-microvms/gha-microvm-&lt;id&gt;-runtime</code>, one stream per runner</td></tr>
+    <tr><td>Image builds</td><td><code>/aws/lambda-microvms/gha-microvm-&lt;id&gt;-build</code></td></tr>
+    <tr><td>Metrics</td><td>Namespace <code>MicrovmGithubRunners</code>, dimension <code>Repository</code></td></tr>
+    <tr><td>API calls (who changed what)</td><td>CloudTrail of the account / organisation trail</td></tr>
+  </table>
+</section>
+
+<section id="dlq">
+  <h3>DLQ: jobs could not be dispatched</h3>
+  <ol>
+    <li>Look up the reason: Logs Insights on the dispatcher, <code>filter msg = "dispatch failed"</code>.</li>
+    <li>Common causes: quota (<code>ServiceQuotaExceededException</code>), image version inactive, broker refusing (see below), GitHub API outage.</li>
+    <li>Fix the cause, then redrive: <code>aws sqs start-message-move-task --source-arn &lt;dlq_arn&gt;</code>. Jobs still queued at GitHub are also picked up by the sweeper.</li>
+  </ol>
+</section>
+
+<section id="queue-age">
+  <h3>Queue age: jobs wait more than 10 minutes</h3>
+  <ol>
+    <li>Check <code>ActiveRunners</code> against <code>max_runners</code>. If saturated, raise <code>max_runners</code> or reduce parallel jobs.</li>
+    <li>Check MicroVM memory quota usage in Service Quotas (running and suspended VMs count).</li>
+    <li>Check the dispatcher for <code>Throttled</code> metrics and errors.</li>
+  </ol>
+</section>
+
+<section id="lambda-errors">
+  <h3>Lambda errors</h3>
+  <ol>
+    <li>Open the function's log group and filter on <code>level = "ERROR"</code>.</li>
+    <li>VPC issues (timeouts to AWS APIs or GitHub) point to endpoint DNS or the central egress path. Test from the VPC with a Reachability Analyzer path to the TGW.</li>
+    <li>Webhook <code>401</code>: secret mismatch. Webhook <code>403</code>: delivery for another repository.</li>
+  </ol>
+</section>
+
+<section id="broker-errors">
+  <h3>Broker errors</h3>
+  <ol>
+    <li><code>broker.denied</code> audit events show the reason: repository not onboarded, wrong caller role, or a foreign account.</li>
+    <li><code>read app secret</code> errors: the App key secret is empty or malformed. It must be <code>{"app_id": 123, "private_key": "-----BEGIN ..."}</code>.</li>
+    <li>GitHub <code>401</code>: the App key was rotated or revoked; update the secret.</li>
+  </ol>
+</section>
+
+<section id="dispatch-errors">
+  <h3>Dispatch errors</h3>
+  <p>As for the DLQ. Each failure cleans up its JIT parameter and runner registration before retrying, so repeated errors do not leak runners.</p>
+</section>
+
+<section id="sweep-errors">
+  <h3>Sweep errors</h3>
+  <p>The sweeper needs the broker and GitHub. Check broker errors and GitHub status. While the sweeper fails, lost webhooks are not repaired, but normal dispatch still works.</p>
+</section>
+
+<section id="sweeper-silent">
+  <h3>Sweeper silent</h3>
+  <p>The EventBridge Scheduler schedule <code>gha-microvm-&lt;id&gt;-sweeper</code> is disabled or its role cannot invoke the function. Re-apply the stack.</p>
+</section>
+
+<section id="reaped">
+  <h3>Reaped: a VM hit its hard lifetime</h3>
+  <p>A job ran past <code>max_job_minutes</code> + 5. Make sure workflows set <code>timeout-minutes</code> to at most <code>max_job_minutes</code>. Check the job's runtime log for a hang.</p>
+</section>
+
+<section id="lost">
+  <h3>Lost: VMs disappear before their job ends</h3>
+  <p>Check <code>StateReason</code> with <code>aws lambda-microvms get-microvm</code>. Typical causes: out-of-memory (raise <code>memory_mib</code>), disk full (32 GB max at 8 GB baseline), or an AWS event. Jobs are re-dispatched.</p>
+</section>
+
+<section>
+  <h2><small>Procedures</small>Routine changes</h2>
+  <h3>Upgrade the runner</h3>
+  <ol>
+    <li>Bump <code>runner_version</code> and both SHA-256 values in the <code>justfile</code>, and run <code>just release-assets</code>.</li>
+    <li>Tag a release. Consumers bump <code>RELEASE</code> in their deploy workflow; the image builds a new version.</li>
+    <li>Roll back by pinning <code>image_version</code> to the previous version.</li>
+  </ol>
+  <h3>Rotate secrets</h3>
+  <ul>
+    <li>Webhook: bump <code>webhook_secret_version</code>, apply, read the new value from Secrets Manager, update the GitHub webhook. The sweeper covers deliveries rejected in between.</li>
+    <li>GitHub App key: generate a new key in GitHub, put it in the App secret, delete the old key in GitHub.</li>
+  </ul>
+  <h3>Base image deprecation</h3>
+  <p>AWS deprecates base image versions with 60 + 30 days notice. Bump <code>base_image_version</code> in <code>runner-image</code> and re-apply.</p>
+  <h3>Emergency stop</h3>
+  <ol>
+    <li>Disable the webhook in GitHub, or set reserved concurrency of the dispatcher to 0.</li>
+    <li>Terminate running VMs: <code>aws lambda-microvms list-microvms --image-identifier &lt;image&gt;</code>, then <code>terminate-microvm</code> for each.</li>
+    <li>Switch workflows to GitHub-hosted runners.</li>
+  </ol>
+</section>
+
+<section>
+  <h2><small>Resilience tests</small>Drills (DORA Art. 24–25)</h2>
+  <table>
+    <tr><th>Drill</th><th>How</th><th>Expected</th></tr>
+    <tr><td>Lost webhooks</td><td><code>just drill-lost-webhooks &lt;queue_url&gt;</code> while jobs are queued</td><td>Jobs start within 5 minutes through the sweeper</td></tr>
+    <tr><td>VM failure mid-job</td><td>Terminate a running VM by hand</td><td>Job fails in GitHub, <code>Lost</code> metric, re-run succeeds</td></tr>
+    <tr><td>Capacity exhaustion</td><td>Queue more jobs than <code>max_runners</code></td><td>Excess jobs wait, <code>Throttled</code> metric, all complete</td></tr>
+    <tr><td>Broker outage</td><td>Set broker reserved concurrency to 0 for 10 minutes</td><td>Broker and dispatch alarms fire; jobs start after recovery</td></tr>
+    <tr><td>Fallback</td><td>Switch one workflow to <code>ubuntu-latest</code></td><td>Builds continue without the platform</td></tr>
+  </table>
+  <p>Record date, outcome and follow-ups for each drill in your ICT testing register.</p>
+</section>
+
+</main>
+<footer>aws-abaschen · <a href="https://github.com/aws-abaschen/terraform-aws-microvm-github-runners">source</a></footer>
+</body>
+</html>

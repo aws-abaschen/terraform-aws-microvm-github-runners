@@ -3,467 +3,410 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MicroVM GitHub Runners · Proposal</title>
-<meta name="description" content="Per-repository ephemeral GitHub Actions runners on AWS Lambda MicroVMs, deployed with Terraform.">
-<style>
-  :root{
-    --bg:#0b0f17; --panel:#121826; --panel2:#182033; --line:#26304a;
-    --text:#e6e9f2; --muted:#9aa4bd; --accent:#ff9900; --accent2:#4ea1ff;
-    --ok:#3ccf91; --warn:#ffcc4d; --bad:#ff6b6b; --purple:#b48cff;
-    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  }
-  *{box-sizing:border-box}
-  html{scroll-behavior:smooth}
-  body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-  a{color:var(--accent2)}
-  header{padding:72px 24px 48px;text-align:center;background:radial-gradient(1200px 400px at 50% -10%,#1d2a4a 0,transparent 70%)}
-  header .tag{display:inline-block;font:600 12px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent);border:1px solid #ff990055;border-radius:999px;padding:6px 12px;margin-bottom:18px}
-  h1{font-size:clamp(28px,5vw,48px);margin:0 0 12px;line-height:1.15}
-  header p{max-width:720px;margin:0 auto;color:var(--muted);font-size:18px}
-  nav{position:sticky;top:0;z-index:5;background:#0b0f17e6;backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
-  nav ul{display:flex;gap:4px;flex-wrap:wrap;justify-content:center;list-style:none;margin:0;padding:10px}
-  nav a{display:block;padding:6px 12px;border-radius:8px;color:var(--muted);text-decoration:none;font-size:14px}
-  nav a:hover{background:var(--panel);color:var(--text)}
-  main{max-width:1080px;margin:0 auto;padding:24px}
-  section{padding:40px 0;border-bottom:1px solid var(--line)}
-  section:last-child{border-bottom:0}
-  h2{font-size:28px;margin:0 0 8px}
-  h2 small{display:block;font:500 13px/1.4 var(--mono);color:var(--accent);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px}
-  h3{margin:28px 0 8px;font-size:19px}
-  .lead{color:var(--muted);max-width:760px}
-  .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin-top:20px}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px}
-  .card h4{margin:0 0 6px;font-size:16px}
-  .card p{margin:0;color:var(--muted);font-size:15px}
-  .card.ok{border-left:4px solid var(--ok)} .card.warn{border-left:4px solid var(--warn)} .card.bad{border-left:4px solid var(--bad)}
-  figure{margin:24px 0;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;overflow-x:auto}
-  figure svg{display:block;width:100%;height:auto;min-width:720px}
-  figcaption{color:var(--muted);font-size:14px;margin-top:10px;text-align:center}
-  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:15px}
-  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
-  th{color:var(--muted);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.05em}
-  td code,p code,li code{font-family:var(--mono);font-size:13.5px;background:var(--panel2);padding:2px 6px;border-radius:6px}
-  pre{background:#0a0d14;border:1px solid var(--line);border-radius:12px;padding:16px;overflow-x:auto;font:13.5px/1.55 var(--mono);color:#cdd6f4}
-  .k{color:var(--purple)} .s{color:var(--ok)} .c{color:#6c7894} .n{color:var(--warn)}
-  .pill{display:inline-block;font:600 12px/1 var(--mono);padding:4px 8px;border-radius:6px;background:var(--panel2);color:var(--muted);margin-right:6px}
-  ol.steps{counter-reset:s;list-style:none;padding:0}
-  ol.steps li{counter-increment:s;position:relative;padding:4px 0 14px 44px}
-  ol.steps li::before{content:counter(s);position:absolute;left:0;top:2px;width:30px;height:30px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);display:grid;place-items:center;font:600 13px var(--mono);color:var(--accent)}
-  footer{text-align:center;color:var(--muted);font-size:14px;padding:40px 24px}
-</style>
+<title>MicroVM GitHub Runners</title>
+<meta name="description" content="Per-repository ephemeral GitHub Actions runners on AWS Lambda MicroVMs, deployed with Terraform, built for regulated landing zones.">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 
+<div class="topbar">
+  <a class="brand" href="index.html">MicroVM GitHub Runners</a>
+  <div class="links">
+    <a class="active" href="index.html">Overview</a>
+    <a href="security.html">Security</a>
+    <a href="operations.html">Operations</a>
+    <a href="dora.html">DORA</a>
+    <a href="https://github.com/aws-abaschen/terraform-aws-microvm-github-runners">GitHub</a>
+  </div>
+</div>
+
 <header>
-  <span class="tag">Proposal · v0.1</span>
+  <span class="tag">v0.1 · implemented</span>
   <h1>Ephemeral GitHub runners on<br>AWS Lambda MicroVMs</h1>
-  <p>Each repository deploys its own runners into its own AWS account with Terraform. Every job gets a fresh Firecracker VM, runs for at most one hour, can read only that repository's secrets, and is then destroyed.</p>
+  <p>Each repository deploys its own runners into its own AWS account with Terraform. Every job gets a fresh Firecracker VM in your VPC, runs for at most one hour, can read only that repository's secrets, and is then destroyed. Built for landing zones without NAT, with central egress and VPC endpoints.</p>
 </header>
 
 <nav><ul>
-  <li><a href="#review">Review</a></li>
+  <li><a href="#decisions">Decisions</a></li>
   <li><a href="#architecture">Architecture</a></li>
   <li><a href="#lifecycle">Job lifecycle</a></li>
+  <li><a href="#isolation">Repo isolation</a></li>
   <li><a href="#reuse">VM reuse</a></li>
-  <li><a href="#secrets">Secrets &amp; trust</a></li>
-  <li><a href="#module">Terraform module</a></li>
-  <li><a href="#usage">Usage</a></li>
+  <li><a href="#modules">Terraform</a></li>
+  <li><a href="#onboarding">Onboarding</a></li>
   <li><a href="#costs">Costs &amp; limits</a></li>
-  <li><a href="#plan">Plan</a></li>
 </ul></nav>
 
 <main>
 
-<!-- ============================== REVIEW ============================== -->
-<section id="review">
-  <h2><small>01 · Design review</small>What changes with "runners only, 1&nbsp;h max"</h2>
-  <p class="lead">The first draft had an org-level router and a cross-account hop. With only runners to build and a 1-hour cap, the router is not worth it. Each repository gets a small, self-contained stack in its target account.</p>
-
+<!-- ============================== DECISIONS ============================== -->
+<section id="decisions">
+  <h2><small>01 · Decisions</small>What we built and why</h2>
+  <p class="lead">Runners only, jobs of at most one hour, enterprise landing zone, DORA in scope.</p>
   <div class="grid">
-    <div class="card ok"><h4>Keep: Lambda MicroVMs</h4><p>A fresh VM per job, per-second billing and no idle cost. One hour is well inside the 8-hour MicroVM limit.</p></div>
-    <div class="card ok"><h4>Keep: JIT runners + GitHub App</h4><p>A single-use registration per job. The App key stays in the dispatcher and never enters a VM.</p></div>
-    <div class="card bad"><h4>Drop: org router &amp; cross-account role</h4><p>No shared control plane and one less trust boundary. The webhook goes straight to the repo's own account.</p></div>
-    <div class="card bad"><h4>Drop: suspend / resume / warm pool</h4><p>No idle policy and no snapshot state between jobs. Run, then terminate.</p></div>
-    <div class="card bad"><h4>Drop: EC2 &amp; capacity providers</h4><p>Capacity providers are for Lambda Managed Instances, not MicroVMs. EC2 adds idle cost and AMI work you don't need at this scale.</p></div>
-    <div class="card warn"><h4>Watch: arm64 only</h4><p>Every action, container and binary must have an arm64 build. Keep <code>ubuntu-latest</code> for x86-only jobs.</p></div>
+    <div class="card ok"><h4>Lambda MicroVMs, one job per VM</h4><p>A fresh Firecracker VM per job, per-second billing and no idle cost. The one-hour cap is well inside the 8-hour MicroVM limit.</p></div>
+    <div class="card ok"><h4>Everything inside your VPC</h4><p>Lambdas and MicroVMs use your private subnets. MicroVMs attach through a <code>VPC_EGRESS</code> connector, never <code>INTERNET_EGRESS</code>. Traffic follows the Transit Gateway to central egress and inspection.</p></div>
+    <div class="card ok"><h4>Platform-owned token broker</h4><p>Only the broker reads the GitHub App key. A repository proves its IAM identity with a presigned STS call and gets a one-hour token for its own repository only.</p></div>
+    <div class="card ok"><h4>Per-repo IAM boundary</h4><p>Each repository's deploy role, and every role it creates, is capped by a boundary tied to <code>gha-microvm-&lt;repo-id&gt;-*</code>. Repos sharing an account cannot touch each other.</p></div>
+    <div class="card ok"><h4>Per-repo MicroVM image</h4><p><code>Get</code>/<code>TerminateMicrovm</code> are scoped to an image ARN. One image per repo means a dispatcher can only kill its own VMs.</p></div>
+    <div class="card ok"><h4>arm64 by default, x64 available</h4><p>Base image version 3 adds <code>X86_64</code>. Graviton is the cheaper default; pick x64 per repo when toolchains need it.</p></div>
+    <div class="card warn"><h4>Public webhook, HMAC-verified</h4><p>GitHub cannot sign SigV4, so the Function URL is public with HMAC checks by default. Set <code>webhook_auth_type = "AWS_IAM"</code> to accept calls only from a central ingress with WAF.</p></div>
+    <div class="card warn"><h4>Ambient role is for CI secrets only</h4><p>Every job, including pull requests, gets the runner role. Production credentials come from GitHub OIDC bound to protected Environments.</p></div>
   </div>
-
-  <h3>The 1-hour cap is enforced in three places</h3>
-  <table>
-    <tr><th>Layer</th><th>Setting</th><th>Effect</th></tr>
-    <tr><td>Workflow</td><td><code>timeout-minutes: 60</code></td><td>GitHub cancels the job. This is the clean stop.</td></tr>
-    <tr><td>MicroVM</td><td><code>maximumDurationInSeconds = 3900</code></td><td>Lambda hard-kills the VM at 65 min (60 min job + 5 min boot margin).</td></tr>
-    <tr><td>Sweeper</td><td>every 5 min</td><td>Terminates any VM older than 65 min and re-queues orphaned jobs.</td></tr>
-  </table>
 </section>
 
 <!-- ============================== ARCHITECTURE ============================== -->
 <section id="architecture">
-  <h2><small>02 · Architecture</small>One stack per repository</h2>
-  <p class="lead">Everything sits in the target account. Idle cost is close to zero: two Lambdas, one queue, one table and two secrets.</p>
+  <h2><small>02 · Architecture</small>Three modules, two accounts</h2>
+  <p class="lead">The platform team applies <code>bootstrap</code> once per account and Region. Each repository applies <code>runner-image</code> and <code>repo-runner</code> from its own workflow.</p>
 
   <figure>
-  <svg viewBox="0 0 1040 560" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
+  <svg viewBox="0 0 1320 700" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
     <defs>
       <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#9aa4bd"/></marker>
       <marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#ff9900"/></marker>
-      <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#3ccf91"/></marker>
-      <linearGradient id="vm" x1="0" x2="1"><stop offset="0" stop-color="#ff9900"/><stop offset="1" stop-color="#ff6b3d"/></linearGradient>
+      <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#4ea1ff"/></marker>
+      <marker id="ap" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#b48cff"/></marker>
     </defs>
 
     <!-- GitHub -->
-    <rect x="20" y="40" width="190" height="480" rx="16" fill="#161b22" stroke="#30363d"/>
-    <text x="115" y="72" fill="#e6e9f2" font-size="16" font-weight="700" text-anchor="middle">GitHub</text>
-    <rect x="40" y="100" width="150" height="70" rx="10" fill="#21262d" stroke="#30363d"/>
-    <text x="115" y="130" fill="#e6e9f2" font-size="14" font-weight="600" text-anchor="middle">my-org/my-repo</text>
-    <text x="115" y="150" fill="#9aa4bd" font-size="12" text-anchor="middle">workflow_job webhook</text>
-    <rect x="40" y="210" width="150" height="70" rx="10" fill="#21262d" stroke="#30363d"/>
-    <text x="115" y="240" fill="#e6e9f2" font-size="14" font-weight="600" text-anchor="middle">GitHub App</text>
-    <text x="115" y="260" fill="#9aa4bd" font-size="12" text-anchor="middle">generate-jitconfig</text>
-    <rect x="40" y="320" width="150" height="70" rx="10" fill="#21262d" stroke="#30363d"/>
-    <text x="115" y="350" fill="#e6e9f2" font-size="14" font-weight="600" text-anchor="middle">Actions service</text>
-    <text x="115" y="370" fill="#9aa4bd" font-size="12" text-anchor="middle">assigns job to runner</text>
+    <rect x="20" y="40" width="170" height="620" rx="16" fill="#161b22" stroke="#30363d"/>
+    <text x="105" y="72" fill="#e6e9f2" font-size="16" font-weight="700" text-anchor="middle">GitHub</text>
+    <rect x="35" y="100" width="140" height="64" rx="10" fill="#21262d" stroke="#30363d"/>
+    <text x="105" y="128" fill="#e6e9f2" font-size="13.5" font-weight="600" text-anchor="middle">acme/app</text>
+    <text x="105" y="147" fill="#9aa4bd" font-size="11.5" text-anchor="middle">workflow_job webhook</text>
+    <rect x="35" y="300" width="140" height="64" rx="10" fill="#21262d" stroke="#30363d"/>
+    <text x="105" y="328" fill="#e6e9f2" font-size="13.5" font-weight="600" text-anchor="middle">REST API</text>
+    <text x="105" y="347" fill="#9aa4bd" font-size="11.5" text-anchor="middle">tokens · jitconfig</text>
+    <rect x="35" y="520" width="140" height="64" rx="10" fill="#21262d" stroke="#30363d"/>
+    <text x="105" y="548" fill="#e6e9f2" font-size="13.5" font-weight="600" text-anchor="middle">Actions service</text>
+    <text x="105" y="567" fill="#9aa4bd" font-size="11.5" text-anchor="middle">job long-poll</text>
 
-    <!-- AWS account -->
-    <rect x="250" y="20" width="770" height="520" rx="18" fill="none" stroke="#ff9900" stroke-dasharray="6 6"/>
-    <rect x="266" y="8" width="230" height="24" rx="6" fill="#0b0f17"/>
-    <text x="276" y="25" fill="#ff9900" font-size="13" font-weight="700">TARGET AWS ACCOUNT · per repo</text>
+    <!-- Workload account -->
+    <rect x="220" y="20" width="830" height="660" rx="18" fill="none" stroke="#ff9900" stroke-dasharray="6 6"/>
+    <rect x="236" y="8" width="250" height="24" rx="6" fill="#0b0f17"/>
+    <text x="246" y="25" fill="#ff9900" font-size="13" font-weight="700">WORKLOAD ACCOUNT · no NAT</text>
+    <rect x="240" y="46" width="790" height="618" rx="14" fill="none" stroke="#3ccf91" stroke-dasharray="3 5"/>
+    <text x="256" y="66" fill="#3ccf91" font-size="11.5" font-weight="700" letter-spacing="1.2">VPC · PRIVATE SUBNETS · SG: HTTPS EGRESS ONLY</text>
 
-    <!-- control plane -->
-    <rect x="270" y="50" width="470" height="300" rx="14" fill="#121826" stroke="#26304a"/>
-    <text x="290" y="76" fill="#9aa4bd" font-size="12" font-weight="700" letter-spacing="1.5">CONTROL PLANE · module repo-runner</text>
+    <!-- per-repo control plane -->
+    <rect x="256" y="80" width="560" height="200" rx="12" fill="#121826" stroke="#26304a"/>
+    <text x="272" y="102" fill="#9aa4bd" font-size="11.5" font-weight="700" letter-spacing="1.2">REPO-RUNNER · per repository</text>
+    <rect x="272" y="116" width="122" height="62" rx="10" fill="#182033" stroke="#4ea1ff"/>
+    <text x="333" y="142" fill="#e6e9f2" font-size="13.5" font-weight="600" text-anchor="middle">webhook λ</text>
+    <text x="333" y="160" fill="#9aa4bd" font-size="11" text-anchor="middle">Function URL · HMAC</text>
+    <rect x="414" y="116" width="100" height="62" rx="10" fill="#182033" stroke="#b48cff"/>
+    <text x="464" y="142" fill="#e6e9f2" font-size="13.5" font-weight="600" text-anchor="middle">SQS</text>
+    <text x="464" y="160" fill="#9aa4bd" font-size="11" text-anchor="middle">+ DLQ · KMS</text>
+    <rect x="534" y="116" width="128" height="62" rx="10" fill="#182033" stroke="#4ea1ff"/>
+    <text x="598" y="142" fill="#e6e9f2" font-size="13.5" font-weight="600" text-anchor="middle">dispatcher λ</text>
+    <text x="598" y="160" fill="#9aa4bd" font-size="11" text-anchor="middle">control role</text>
+    <rect x="682" y="116" width="118" height="62" rx="10" fill="#182033" stroke="#26304a"/>
+    <text x="741" y="142" fill="#e6e9f2" font-size="13" font-weight="600" text-anchor="middle">DynamoDB</text>
+    <text x="741" y="160" fill="#9aa4bd" font-size="11" text-anchor="middle">claims · VMs · PITR</text>
+    <rect x="534" y="198" width="128" height="62" rx="10" fill="#182033" stroke="#26304a"/>
+    <text x="598" y="224" fill="#e6e9f2" font-size="13" font-weight="600" text-anchor="middle">sweeper λ</text>
+    <text x="598" y="242" fill="#9aa4bd" font-size="11" text-anchor="middle">every 2 min</text>
+    <rect x="272" y="198" width="242" height="62" rx="10" fill="#182033" stroke="#26304a"/>
+    <text x="393" y="224" fill="#e6e9f2" font-size="13" font-weight="600" text-anchor="middle">SSM · /gha-microvm/&lt;id&gt;/jit/*</text>
+    <text x="393" y="242" fill="#9aa4bd" font-size="11" text-anchor="middle">one-time JIT config · deleted on read</text>
+    <rect x="682" y="198" width="118" height="62" rx="10" fill="#182033" stroke="#26304a"/>
+    <text x="741" y="224" fill="#e6e9f2" font-size="13" font-weight="600" text-anchor="middle">Alarms</text>
+    <text x="741" y="242" fill="#9aa4bd" font-size="11" text-anchor="middle">→ incident SNS</text>
 
-    <rect x="290" y="100" width="130" height="70" rx="10" fill="#182033" stroke="#4ea1ff"/>
-    <text x="355" y="128" fill="#e6e9f2" font-size="14" font-weight="600" text-anchor="middle">webhook λ</text>
-    <text x="355" y="147" fill="#9aa4bd" font-size="11.5" text-anchor="middle">Function URL · HMAC</text>
-
-    <rect x="450" y="100" width="110" height="70" rx="10" fill="#182033" stroke="#b48cff"/>
-    <text x="505" y="128" fill="#e6e9f2" font-size="14" font-weight="600" text-anchor="middle">SQS</text>
-    <text x="505" y="147" fill="#9aa4bd" font-size="11.5" text-anchor="middle">+ DLQ</text>
-
-    <rect x="590" y="100" width="130" height="70" rx="10" fill="#182033" stroke="#4ea1ff"/>
-    <text x="655" y="128" fill="#e6e9f2" font-size="14" font-weight="600" text-anchor="middle">dispatcher λ</text>
-    <text x="655" y="147" fill="#9aa4bd" font-size="11.5" text-anchor="middle">Go · batch 1</text>
-
-    <rect x="290" y="210" width="130" height="60" rx="10" fill="#182033" stroke="#26304a"/>
-    <text x="355" y="236" fill="#e6e9f2" font-size="13.5" font-weight="600" text-anchor="middle">sweeper λ</text>
-    <text x="355" y="254" fill="#9aa4bd" font-size="11.5" text-anchor="middle">Scheduler · 5 min</text>
-
-    <rect x="450" y="210" width="110" height="60" rx="10" fill="#182033" stroke="#26304a"/>
-    <text x="505" y="236" fill="#e6e9f2" font-size="13.5" font-weight="600" text-anchor="middle">DynamoDB</text>
-    <text x="505" y="254" fill="#9aa4bd" font-size="11.5" text-anchor="middle">job ↔ vm · TTL</text>
-
-    <rect x="590" y="210" width="130" height="60" rx="10" fill="#182033" stroke="#26304a"/>
-    <text x="655" y="236" fill="#e6e9f2" font-size="13.5" font-weight="600" text-anchor="middle">Secrets Manager</text>
-    <text x="655" y="254" fill="#9aa4bd" font-size="11.5" text-anchor="middle">App key · webhook secret</text>
-
-    <rect x="590" y="290" width="130" height="46" rx="10" fill="#182033" stroke="#26304a"/>
-    <text x="655" y="318" fill="#e6e9f2" font-size="13" font-weight="600" text-anchor="middle">SSM · JIT param</text>
+    <!-- bootstrap / platform -->
+    <rect x="256" y="300" width="560" height="140" rx="12" fill="#121826" stroke="#26304a"/>
+    <text x="272" y="322" fill="#9aa4bd" font-size="11.5" font-weight="700" letter-spacing="1.2">BOOTSTRAP · per account (platform team)</text>
+    <rect x="272" y="336" width="128" height="88" rx="10" fill="#182033" stroke="#b48cff"/>
+    <text x="336" y="362" fill="#e6e9f2" font-size="13.5" font-weight="600" text-anchor="middle">token broker λ</text>
+    <text x="336" y="381" fill="#9aa4bd" font-size="11" text-anchor="middle">verifies caller</text>
+    <text x="336" y="398" fill="#9aa4bd" font-size="11" text-anchor="middle">via presigned STS</text>
+    <rect x="416" y="336" width="122" height="40" rx="10" fill="#182033" stroke="#26304a"/>
+    <text x="477" y="361" fill="#e6e9f2" font-size="12" font-weight="600" text-anchor="middle">App key secret</text>
+    <rect x="416" y="384" width="122" height="40" rx="10" fill="#182033" stroke="#26304a"/>
+    <text x="477" y="409" fill="#e6e9f2" font-size="12" font-weight="600" text-anchor="middle">KMS CMK</text>
+    <rect x="554" y="336" width="122" height="40" rx="10" fill="#182033" stroke="#26304a"/>
+    <text x="615" y="361" fill="#e6e9f2" font-size="12" font-weight="600" text-anchor="middle">per-repo boundary</text>
+    <rect x="554" y="384" width="122" height="40" rx="10" fill="#182033" stroke="#26304a"/>
+    <text x="615" y="409" fill="#e6e9f2" font-size="12" font-weight="600" text-anchor="middle">OIDC deploy roles</text>
+    <rect x="692" y="336" width="108" height="88" rx="10" fill="#182033" stroke="#3ccf91"/>
+    <text x="746" y="362" fill="#e6e9f2" font-size="12.5" font-weight="600" text-anchor="middle">VPC_EGRESS</text>
+    <text x="746" y="380" fill="#e6e9f2" font-size="12.5" font-weight="600" text-anchor="middle">connector</text>
+    <text x="746" y="400" fill="#9aa4bd" font-size="11" text-anchor="middle">ENIs in subnets</text>
 
     <!-- runtime -->
-    <rect x="770" y="50" width="230" height="300" rx="14" fill="#121826" stroke="#26304a"/>
-    <text x="790" y="76" fill="#9aa4bd" font-size="12" font-weight="700" letter-spacing="1.5">RUNTIME · per job</text>
-    <rect x="790" y="96" width="190" height="150" rx="12" fill="url(#vm)" opacity=".14" stroke="#ff9900"/>
-    <text x="885" y="124" fill="#ff9900" font-size="15" font-weight="700" text-anchor="middle">Lambda MicroVM</text>
-    <text x="885" y="146" fill="#e6e9f2" font-size="12.5" text-anchor="middle">Firecracker · arm64</text>
-    <text x="885" y="166" fill="#e6e9f2" font-size="12.5" text-anchor="middle">2 vCPU · 4 GB · Docker</text>
-    <text x="885" y="190" fill="#9aa4bd" font-size="12" text-anchor="middle">supervisor → run.sh --jitconfig</text>
-    <text x="885" y="210" fill="#9aa4bd" font-size="12" text-anchor="middle">NO_INGRESS · max 65 min</text>
-    <text x="885" y="232" fill="#3ccf91" font-size="12" font-weight="600" text-anchor="middle">exec role: repo secrets only</text>
-    <rect x="790" y="266" width="190" height="66" rx="10" fill="#182033" stroke="#26304a"/>
-    <text x="885" y="292" fill="#e6e9f2" font-size="13.5" font-weight="600" text-anchor="middle">runner-image</text>
-    <text x="885" y="312" fill="#9aa4bd" font-size="11.5" text-anchor="middle">Firecracker snapshot · S3 zip</text>
+    <rect x="256" y="460" width="560" height="190" rx="12" fill="#121826" stroke="#26304a"/>
+    <text x="272" y="482" fill="#9aa4bd" font-size="11.5" font-weight="700" letter-spacing="1.2">RUNTIME · one MicroVM per job</text>
+    <rect x="272" y="496" width="300" height="140" rx="12" fill="#2a1d0d" stroke="#ff9900"/>
+    <text x="422" y="522" fill="#ff9900" font-size="15" font-weight="700" text-anchor="middle">Lambda MicroVM</text>
+    <text x="422" y="544" fill="#e6e9f2" font-size="12.5" text-anchor="middle">Firecracker · arm64 or x64 · Docker</text>
+    <text x="422" y="564" fill="#e6e9f2" font-size="12.5" text-anchor="middle">supervisor → run.sh --jitconfig</text>
+    <text x="422" y="584" fill="#9aa4bd" font-size="12" text-anchor="middle">NO_INGRESS · max 65 min · KMS state</text>
+    <text x="422" y="608" fill="#3ccf91" font-size="12" font-weight="600" text-anchor="middle">runner role: gha/&lt;owner&gt;/&lt;repo&gt;/* only</text>
+    <rect x="592" y="496" width="208" height="64" rx="10" fill="#182033" stroke="#26304a"/>
+    <text x="696" y="522" fill="#e6e9f2" font-size="13" font-weight="600" text-anchor="middle">runner-image</text>
+    <text x="696" y="541" fill="#9aa4bd" font-size="11" text-anchor="middle">snapshot · runner SHA-pinned</text>
+    <rect x="592" y="572" width="208" height="64" rx="10" fill="#182033" stroke="#3ccf91"/>
+    <text x="696" y="598" fill="#e6e9f2" font-size="13" font-weight="600" text-anchor="middle">Repo secrets</text>
+    <text x="696" y="617" fill="#9aa4bd" font-size="11" text-anchor="middle">Secrets Manager · SSM</text>
 
-    <!-- data plane -->
-    <rect x="270" y="380" width="730" height="140" rx="14" fill="#121826" stroke="#26304a"/>
-    <text x="290" y="406" fill="#9aa4bd" font-size="12" font-weight="700" letter-spacing="1.5">REPO SECRETS &amp; RESOURCES</text>
-    <rect x="290" y="424" width="210" height="76" rx="10" fill="#182033" stroke="#3ccf91"/>
-    <text x="395" y="452" fill="#e6e9f2" font-size="13.5" font-weight="600" text-anchor="middle">Secrets Manager</text>
-    <text x="395" y="472" fill="#9aa4bd" font-size="12" font-family="ui-monospace,Menlo,monospace" text-anchor="middle">gha/my-org/my-repo/*</text>
-    <rect x="520" y="424" width="210" height="76" rx="10" fill="#182033" stroke="#3ccf91"/>
-    <text x="625" y="452" fill="#e6e9f2" font-size="13.5" font-weight="600" text-anchor="middle">SSM Parameter Store</text>
-    <text x="625" y="472" fill="#9aa4bd" font-size="12" font-family="ui-monospace,Menlo,monospace" text-anchor="middle">/gha/my-org/my-repo/*</text>
-    <rect x="750" y="424" width="230" height="76" rx="10" fill="#182033" stroke="#26304a"/>
-    <text x="865" y="452" fill="#e6e9f2" font-size="13.5" font-weight="600" text-anchor="middle">OIDC deploy roles</text>
-    <text x="865" y="472" fill="#9aa4bd" font-size="12" text-anchor="middle">optional · per Environment</text>
+    <!-- VPC egress side -->
+    <rect x="836" y="80" width="178" height="570" rx="12" fill="#0f1a14" stroke="#3ccf91"/>
+    <text x="925" y="104" fill="#3ccf91" font-size="11.5" font-weight="700" text-anchor="middle" letter-spacing="1">ROUTE 0.0.0.0/0</text>
+    <rect x="852" y="300" width="146" height="70" rx="10" fill="#182033" stroke="#3ccf91"/>
+    <text x="925" y="328" fill="#e6e9f2" font-size="13.5" font-weight="600" text-anchor="middle">TGW attachment</text>
+    <text x="925" y="348" fill="#9aa4bd" font-size="11" text-anchor="middle">all HTTPS egress</text>
+    <rect x="852" y="130" width="146" height="70" rx="10" fill="#182033" stroke="#26304a"/>
+    <text x="925" y="158" fill="#e6e9f2" font-size="12.5" font-weight="600" text-anchor="middle">Route 53 Resolver</text>
+    <text x="925" y="177" fill="#9aa4bd" font-size="11" text-anchor="middle">shared endpoint zones</text>
+    <rect x="852" y="470" width="146" height="70" rx="10" fill="#182033" stroke="#26304a" stroke-dasharray="4 4"/>
+    <text x="925" y="498" fill="#e6e9f2" font-size="12.5" font-weight="600" text-anchor="middle">local endpoints</text>
+    <text x="925" y="517" fill="#9aa4bd" font-size="11" text-anchor="middle">optional mode</text>
+
+    <!-- Central networking account -->
+    <rect x="1080" y="20" width="220" height="660" rx="18" fill="none" stroke="#4ea1ff" stroke-dasharray="6 6"/>
+    <rect x="1096" y="8" width="190" height="24" rx="6" fill="#0b0f17"/>
+    <text x="1106" y="25" fill="#4ea1ff" font-size="13" font-weight="700">NETWORKING ACCOUNT</text>
+    <rect x="1100" y="120" width="180" height="90" rx="12" fill="#121826" stroke="#4ea1ff"/>
+    <text x="1190" y="148" fill="#e6e9f2" font-size="13.5" font-weight="600" text-anchor="middle">Central VPC endpoints</text>
+    <text x="1190" y="168" fill="#9aa4bd" font-size="11" text-anchor="middle">sqs · ssm · kms · sts</text>
+    <text x="1190" y="185" fill="#9aa4bd" font-size="11" text-anchor="middle">lambda · logs · secrets…</text>
+    <rect x="1100" y="290" width="180" height="90" rx="12" fill="#121826" stroke="#4ea1ff"/>
+    <text x="1190" y="318" fill="#e6e9f2" font-size="13.5" font-weight="600" text-anchor="middle">Egress VPC</text>
+    <text x="1190" y="338" fill="#9aa4bd" font-size="11" text-anchor="middle">Network Firewall</text>
+    <text x="1190" y="355" fill="#9aa4bd" font-size="11" text-anchor="middle">allow github.com, …</text>
+    <rect x="1100" y="460" width="180" height="80" rx="12" fill="#121826" stroke="#4ea1ff"/>
+    <text x="1190" y="490" fill="#e6e9f2" font-size="13.5" font-weight="600" text-anchor="middle">NAT + IGW</text>
+    <text x="1190" y="510" fill="#9aa4bd" font-size="11" text-anchor="middle">fixed egress IPs</text>
 
     <!-- arrows -->
-    <path d="M190,135 C240,135 250,135 288,135" stroke="#9aa4bd" stroke-width="2" fill="none" marker-end="url(#a)"/>
-    <text x="232" y="126" fill="#9aa4bd" font-size="11" text-anchor="middle">① POST</text>
-    <path d="M420,135 L448,135" stroke="#9aa4bd" stroke-width="2" marker-end="url(#a)"/>
-    <path d="M560,135 L588,135" stroke="#9aa4bd" stroke-width="2" marker-end="url(#a)"/>
-    <path d="M655,170 L655,208" stroke="#9aa4bd" stroke-width="1.6" stroke-dasharray="4 4" marker-end="url(#a)"/>
-    <path d="M590,190 L560,220" stroke="#9aa4bd" stroke-width="1.6" stroke-dasharray="4 4" marker-end="url(#a)"/>
-    <path d="M720,150 L740,150 L740,313 L722,313" stroke="#9aa4bd" stroke-width="1.6" stroke-dasharray="4 4" fill="none" marker-end="url(#a)"/>
-    <path d="M610,100 C560,40 260,30 200,230" stroke="#4ea1ff" stroke-width="2" fill="none" marker-end="url(#a)"/>
-    <text x="410" y="44" fill="#4ea1ff" font-size="11.5">② generate-jitconfig (App token)</text>
-    <path d="M720,120 L788,140" stroke="#ff9900" stroke-width="2.5" marker-end="url(#ao)"/>
-    <text x="752" y="112" fill="#ff9900" font-size="11.5" text-anchor="middle">③ RunMicrovm</text>
-    <path d="M885,246 L885,264" stroke="#9aa4bd" stroke-width="1.6" marker-end="url(#a)"/>
-    <path d="M790,200 C760,250 740,300 722,318" stroke="#3ccf91" stroke-width="1.8" fill="none" marker-end="url(#ag)"/>
-    <path d="M820,246 C760,360 520,380 420,422" stroke="#3ccf91" stroke-width="1.8" fill="none" marker-end="url(#ag)"/>
-    <path d="M840,246 C780,380 660,390 630,422" stroke="#3ccf91" stroke-width="1.8" fill="none" marker-end="url(#ag)"/>
-    <path d="M800,246 L770,366 L232,366 L194,384" stroke="#9aa4bd" stroke-width="2" fill="none" marker-end="url(#a)"/>
-    <text x="500" y="360" fill="#9aa4bd" font-size="11.5" text-anchor="middle">④ runner long-polls GitHub (outbound HTTPS only)</text>
-    <path d="M355,210 L355,172" stroke="#9aa4bd" stroke-width="1.6" stroke-dasharray="4 4"/>
-    <path d="M420,240 L448,240" stroke="#9aa4bd" stroke-width="1.6" stroke-dasharray="4 4" marker-end="url(#a)"/>
+    <path d="M175,132 L270,140" stroke="#9aa4bd" stroke-width="2" marker-end="url(#a)"/>
+    <text x="222" y="114" fill="#9aa4bd" font-size="11" text-anchor="middle">① HTTPS</text>
+    <path d="M394,147 L412,147" stroke="#9aa4bd" stroke-width="2" marker-end="url(#a)"/>
+    <path d="M514,147 L532,147" stroke="#9aa4bd" stroke-width="2" marker-end="url(#a)"/>
+    <path d="M662,147 L680,147" stroke="#9aa4bd" stroke-width="1.6" stroke-dasharray="4 4" marker-end="url(#a)"/>
+    <path d="M560,178 C520,270 420,300 380,334" stroke="#b48cff" stroke-width="2" fill="none" marker-end="url(#ap)"/>
+    <text x="470" y="292" fill="#b48cff" font-size="11">② token request</text>
+    <path d="M400,380 L414,360" stroke="#9aa4bd" stroke-width="1.4" stroke-dasharray="3 3"/>
+    <path d="M590,178 L590,494" stroke="#ff9900" stroke-width="2.4" marker-end="url(#ao)"/>
+    <text x="598" y="453" fill="#ff9900" font-size="11.5">③ RunMicrovm</text>
+    <path d="M572,628 C760,650 900,560 925,372" stroke="#3ccf91" stroke-width="2" fill="none" marker-end="url(#a)"/>
+    <path d="M998,335 L1098,335" stroke="#3ccf91" stroke-width="2.2" marker-end="url(#a)"/>
+    <path d="M1190,380 L1190,458" stroke="#3ccf91" stroke-width="2" marker-end="url(#a)"/>
+    <path d="M1100,520 C700,690 250,690 177,560" stroke="#3ccf91" stroke-width="2" fill="none" marker-end="url(#a)"/>
+    <text x="640" y="676" fill="#3ccf91" font-size="11.5" text-anchor="middle">④ runner long-polls GitHub · outbound only, inspected centrally</text>
+    <path d="M998,165 C1040,165 1060,165 1098,165" stroke="#4ea1ff" stroke-width="2" marker-end="url(#ab)"/>
+    <text x="1048" y="155" fill="#4ea1ff" font-size="10.5" text-anchor="middle">AWS APIs</text>
+    <path d="M1100,330 C1000,250 260,240 177,332" stroke="#9aa4bd" stroke-width="1.4" stroke-dasharray="5 4" fill="none" marker-end="url(#a)"/>
+    <text x="735" y="294" fill="#9aa4bd" font-size="10.5" text-anchor="middle">broker &amp; dispatcher → api.github.com (same path)</text>
   </svg>
-  <figcaption>① GitHub sends <code>workflow_job</code> → ② the dispatcher mints a JIT config → ③ launches one MicroVM → ④ the runner picks up the job over outbound HTTPS. Green lines: what the execution role can read.</figcaption>
+  <figcaption>① GitHub calls the webhook → ② the dispatcher gets a repo-scoped token from the broker → ③ it launches one MicroVM in the VPC → ④ the runner reaches GitHub through the central egress. AWS APIs resolve to central (or local) VPC endpoints.</figcaption>
   </figure>
 
-  <h3>Components</h3>
   <table>
-    <tr><th>Component</th><th>Service</th><th>Why</th></tr>
-    <tr><td>Webhook receiver</td><td>Lambda Function URL (Go)</td><td>Checks the HMAC, keeps only <code>queued</code>/<code>completed</code> events with matching labels, and enqueues them. No API Gateway needed.</td></tr>
-    <tr><td>Queue</td><td>SQS + DLQ</td><td>Retries when <code>RunMicrovm</code> is throttled. Failed jobs land in the DLQ, not nowhere.</td></tr>
-    <tr><td>Dispatcher</td><td>Lambda (Go), batch size 1</td><td>Deduplicates jobs, mints the JIT config, launches or terminates VMs, and caps concurrency.</td></tr>
-    <tr><td>State</td><td>DynamoDB (on-demand, TTL)</td><td>Maps <code>job_id → microvm_id</code>. A conditional put blocks duplicate launches.</td></tr>
-    <tr><td>Sweeper</td><td>EventBridge Scheduler → Lambda</td><td>Reaps VMs older than 65 min and re-dispatches jobs whose webhook was lost.</td></tr>
-    <tr><td>Runner image</td><td><code>awscc_lambda_microvm_image</code></td><td>Built from a Dockerfile plus a zip in S3. Contains <code>actions/runner</code> (arm64), Docker and a small supervisor.</td></tr>
+    <tr><th>Module</th><th>Applied by</th><th>Creates</th></tr>
+    <tr><td><code>bootstrap</code></td><td>Platform team, once per account and Region</td><td>KMS key, artifact and state buckets, runner security group, <code>VPC_EGRESS</code> connector, optional local endpoints, GitHub OIDC provider, per-repo boundary and deploy role, token broker, App key secret, alarm topic, platform config parameter</td></tr>
+    <tr><td><code>runner-image</code></td><td>Repository workflow</td><td>Image artifact upload, build role, MicroVM image (arm64 or x64, Docker on)</td></tr>
+    <tr><td><code>repo-runner</code></td><td>Repository workflow</td><td>Webhook, queue + DLQ, dispatcher, sweeper, state table, runner role, webhook secret (write-only), alarms</td></tr>
   </table>
 </section>
 
 <!-- ============================== LIFECYCLE ============================== -->
 <section id="lifecycle">
   <h2><small>03 · Job lifecycle</small>From <code>queued</code> to terminated</h2>
-  <p class="lead">The runner never sees the GitHub App key. It receives a pointer to a one-time SSM parameter, reads it, deletes it and runs exactly one job.</p>
-
   <figure>
-  <svg viewBox="0 0 1150 640" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
+  <svg viewBox="0 0 1180 700" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
     <defs>
       <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#cdd6f4"/></marker>
       <marker id="bo" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#ff9900"/></marker>
+      <marker id="bp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#b48cff"/></marker>
+      <marker id="bb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#4ea1ff"/></marker>
       <marker id="br" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#ff6b6b"/></marker>
     </defs>
     <g font-size="14" font-weight="700" text-anchor="middle" fill="#e6e9f2">
-      <rect x="30" y="20" width="140" height="40" rx="10" fill="#161b22" stroke="#30363d"/><text x="100" y="45">GitHub</text>
-      <rect x="230" y="20" width="140" height="40" rx="10" fill="#182033" stroke="#4ea1ff"/><text x="300" y="45">webhook λ</text>
-      <rect x="430" y="20" width="140" height="40" rx="10" fill="#182033" stroke="#b48cff"/><text x="500" y="45">SQS</text>
-      <rect x="630" y="20" width="140" height="40" rx="10" fill="#182033" stroke="#4ea1ff"/><text x="700" y="45">dispatcher λ</text>
-      <rect x="850" y="20" width="160" height="40" rx="10" fill="#2a1d0d" stroke="#ff9900"/><text x="930" y="45" fill="#ff9900">MicroVM</text>
+      <rect x="20" y="20" width="130" height="40" rx="10" fill="#161b22" stroke="#30363d"/><text x="85" y="45">GitHub</text>
+      <rect x="200" y="20" width="130" height="40" rx="10" fill="#182033" stroke="#4ea1ff"/><text x="265" y="45">webhook λ</text>
+      <rect x="380" y="20" width="130" height="40" rx="10" fill="#182033" stroke="#4ea1ff"/><text x="445" y="45">dispatcher λ</text>
+      <rect x="560" y="20" width="130" height="40" rx="10" fill="#182033" stroke="#b48cff"/><text x="625" y="45" fill="#b48cff">broker λ</text>
+      <rect x="740" y="20" width="130" height="40" rx="10" fill="#182033" stroke="#26304a"/><text x="805" y="45">SSM</text>
+      <rect x="920" y="20" width="150" height="40" rx="10" fill="#2a1d0d" stroke="#ff9900"/><text x="995" y="45" fill="#ff9900">MicroVM</text>
     </g>
     <g stroke="#26304a" stroke-width="2" stroke-dasharray="3 5">
-      <line x1="100" y1="60" x2="100" y2="620"/><line x1="300" y1="60" x2="300" y2="620"/>
-      <line x1="500" y1="60" x2="500" y2="620"/><line x1="700" y1="60" x2="700" y2="620"/>
-      <line x1="930" y1="60" x2="930" y2="620"/>
+      <line x1="85" y1="60" x2="85" y2="680"/><line x1="265" y1="60" x2="265" y2="680"/><line x1="445" y1="60" x2="445" y2="680"/>
+      <line x1="625" y1="60" x2="625" y2="680"/><line x1="805" y1="60" x2="805" y2="680"/><line x1="995" y1="60" x2="995" y2="680"/>
     </g>
-    <rect x="922" y="300" width="16" height="250" rx="4" fill="#ff9900" opacity=".25"/>
-
+    <rect x="987" y="372" width="16" height="250" rx="4" fill="#ff9900" opacity=".25"/>
     <g font-size="12.5" fill="#cdd6f4">
-      <line x1="100" y1="95" x2="296" y2="95" stroke="#cdd6f4" stroke-width="1.8" marker-end="url(#b)"/>
-      <text x="198" y="88" text-anchor="middle">workflow_job: queued</text>
-      <text x="310" y="117">verify X-Hub-Signature-256, filter labels</text>
-      <line x1="300" y1="148" x2="496" y2="148" stroke="#cdd6f4" stroke-width="1.8" marker-end="url(#b)"/>
-      <text x="398" y="141" text-anchor="middle">SendMessage</text>
-      <line x1="500" y1="175" x2="696" y2="175" stroke="#cdd6f4" stroke-width="1.8" marker-end="url(#b)"/>
-      <text x="598" y="168" text-anchor="middle">poll · batch 1</text>
-      <text x="710" y="202">PutItem job_id (if not exists)</text>
-      <line x1="700" y1="225" x2="104" y2="225" stroke="#4ea1ff" stroke-width="1.8" marker-end="url(#b)"/>
-      <text x="400" y="218" text-anchor="middle" fill="#4ea1ff">POST /repos/{o}/{r}/actions/runners/generate-jitconfig</text>
-      <text x="710" y="252">PutParameter /gha/…/jit/{job} (SecureString)</text>
-      <line x1="700" y1="285" x2="926" y2="300" stroke="#ff9900" stroke-width="2.4" marker-end="url(#bo)"/>
-      <text x="815" y="278" text-anchor="middle" fill="#ff9900">RunMicrovm · max 3900 s</text>
-      <text x="945" y="325">/run hook</text>
-      <text x="945" y="345">GetParameter + Delete</text>
-      <text x="945" y="365">start dockerd</text>
-      <line x1="930" y1="390" x2="104" y2="390" stroke="#cdd6f4" stroke-width="1.8" marker-end="url(#b)"/>
-      <text x="520" y="383" text-anchor="middle">run.sh --jitconfig → long-poll for job</text>
-      <line x1="100" y1="420" x2="926" y2="420" stroke="#cdd6f4" stroke-width="1.8" marker-end="url(#b)"/>
-      <text x="520" y="413" text-anchor="middle">job assigned · steps run (≤ 60 min)</text>
-      <text x="945" y="455">steps read</text>
-      <text x="945" y="473">gha/&lt;repo&gt;/* secrets</text>
-      <line x1="100" y1="510" x2="296" y2="510" stroke="#cdd6f4" stroke-width="1.8" marker-end="url(#b)"/>
-      <text x="198" y="503" text-anchor="middle">workflow_job: completed</text>
-      <line x1="300" y1="525" x2="696" y2="525" stroke="#cdd6f4" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#b)"/>
-      <text x="498" y="518" text-anchor="middle">via SQS</text>
-      <line x1="700" y1="550" x2="926" y2="550" stroke="#ff6b6b" stroke-width="2.4" marker-end="url(#br)"/>
-      <text x="815" y="543" text-anchor="middle" fill="#ff6b6b">TerminateMicrovm</text>
-      <text x="710" y="585" fill="#9aa4bd">backstops: VM self-exit on runner exit · max duration · sweeper</text>
+      <line x1="85" y1="90" x2="261" y2="90" stroke="#cdd6f4" stroke-width="1.8" marker-end="url(#b)"/>
+      <text x="175" y="83" text-anchor="middle">workflow_job: queued</text>
+      <line x1="265" y1="130" x2="441" y2="130" stroke="#cdd6f4" stroke-width="1.8" marker-end="url(#b)"/>
+      <text x="355" y="123" text-anchor="middle">verified → SQS</text>
+      <text x="455" y="152">claim job (conditional put) · check capacity</text>
+      <line x1="445" y1="180" x2="621" y2="180" stroke="#b48cff" stroke-width="1.8" marker-end="url(#bp)"/>
+      <text x="535" y="173" text-anchor="middle" fill="#b48cff">presigned GetCallerIdentity</text>
+      <text x="635" y="202" fill="#b48cff">caller = &lt;prefix&gt;-&lt;id&gt;-control ?</text>
+      <line x1="625" y1="222" x2="89" y2="222" stroke="#4ea1ff" stroke-width="1.6" marker-end="url(#bb)"/>
+      <text x="355" y="215" text-anchor="middle" fill="#4ea1ff">installation token scoped to acme/app</text>
+      <line x1="625" y1="250" x2="449" y2="250" stroke="#b48cff" stroke-width="1.8" marker-end="url(#bp)"/>
+      <text x="535" y="243" text-anchor="middle" fill="#b48cff">token (1 h)</text>
+      <line x1="445" y1="282" x2="89" y2="282" stroke="#4ea1ff" stroke-width="1.6" marker-end="url(#bb)"/>
+      <text x="265" y="275" text-anchor="middle" fill="#4ea1ff">generate-jitconfig mvm-&lt;job&gt;-&lt;n&gt;</text>
+      <line x1="445" y1="312" x2="801" y2="312" stroke="#cdd6f4" stroke-width="1.8" marker-end="url(#b)"/>
+      <text x="625" y="305" text-anchor="middle">PutParameter SecureString /jit/mvm-…</text>
+      <line x1="445" y1="350" x2="991" y2="372" stroke="#ff9900" stroke-width="2.4" marker-end="url(#bo)"/>
+      <text x="720" y="352" text-anchor="middle" fill="#ff9900">RunMicrovm · payload = parameter name only</text>
+      <line x1="995" y1="400" x2="809" y2="400" stroke="#cdd6f4" stroke-width="1.8" marker-end="url(#b)"/>
+      <text x="900" y="393" text-anchor="middle">/run: Get + Delete</text>
+      <line x1="995" y1="440" x2="89" y2="440" stroke="#cdd6f4" stroke-width="1.8" marker-end="url(#b)"/>
+      <text x="540" y="433" text-anchor="middle">run.sh --jitconfig → long-poll (through TGW)</text>
+      <line x1="85" y1="470" x2="991" y2="470" stroke="#cdd6f4" stroke-width="1.8" marker-end="url(#b)"/>
+      <text x="540" y="463" text-anchor="middle">job runs (≤ 60 min) · steps read gha/acme/app/* secrets</text>
+      <line x1="85" y1="540" x2="261" y2="540" stroke="#cdd6f4" stroke-width="1.8" marker-end="url(#b)"/>
+      <text x="175" y="533" text-anchor="middle">workflow_job: completed</text>
+      <line x1="265" y1="560" x2="441" y2="560" stroke="#cdd6f4" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#b)"/>
+      <line x1="445" y1="600" x2="991" y2="600" stroke="#ff6b6b" stroke-width="2.4" marker-end="url(#br)"/>
+      <text x="720" y="593" text-anchor="middle" fill="#ff6b6b">TerminateMicrovm (only its own image)</text>
+      <text x="455" y="650" fill="#9aa4bd">backstops: sweeper every 2 min · runner deregistered · idle 10 min · VM hard limit 65 min</text>
     </g>
   </svg>
-  <figcaption>The VM has no <code>TerminateMicrovm</code> permission. The dispatcher terminates VMs, so a compromised job cannot kill other VMs.</figcaption>
+  <figcaption>The VM never sees the App key or an installation token. It reads a one-time parameter, deletes it and runs exactly one job.</figcaption>
   </figure>
 
-  <h3>Edge cases handled</h3>
   <table>
-    <tr><th>Case</th><th>Handling</th></tr>
-    <tr><td>Duplicate webhook delivery</td><td>A DynamoDB conditional put on <code>workflow_job.id</code> drops the second launch.</td></tr>
-    <tr><td>Runner picks up a different job (same labels)</td><td>Fine. The dispatcher maps the VM by runner name (<code>mvm-&lt;job_id&gt;</code>) on <code>completed</code>, and the sweeper launches a runner for any job left queued.</td></tr>
-    <tr><td>Lost webhook</td><td>The sweeper lists queued jobs for the repo and dispatches any that are missing.</td></tr>
-    <tr><td><code>RunMicrovm</code> throttled</td><td>The message goes back to SQS with backoff, then to the DLQ after 5 attempts. An alarm fires on DLQ depth.</td></tr>
-    <tr><td>Job hangs past 60 min</td><td>GitHub cancels it. Lambda kills the VM at 65 min.</td></tr>
+    <tr><th>Failure</th><th>Handling</th></tr>
+    <tr><td>Duplicate webhook delivery</td><td>A DynamoDB conditional claim on the job id drops the second launch.</td></tr>
+    <tr><td>Lost webhook</td><td>The sweeper lists queued jobs and re-queues those waiting more than 2 minutes. Stale claims (older than 5 minutes) are re-dispatched with a new attempt number.</td></tr>
+    <tr><td>Runner took another job (same labels)</td><td>VMs are tracked by runner name, so <code>completed</code> always terminates the right VM. The left-over job is re-dispatched by the sweeper.</td></tr>
+    <tr><td><code>completed</code> webhook lost</td><td>GitHub removes a JIT runner after its job. The sweeper sees the runner gone and terminates the VM.</td></tr>
+    <tr><td>Capacity or quota reached</td><td>The claim is released and SQS retries for about an hour. The <code>queue-age</code> alarm fires after 10 minutes.</td></tr>
+    <tr><td><code>RunMicrovm</code> fails</td><td>The JIT parameter and runner registration are deleted, the claim is released and the message is retried. It lands in the DLQ after 20 attempts.</td></tr>
+    <tr><td>Job hangs</td><td>GitHub cancels at <code>timeout-minutes</code>. Lambda kills the VM at 65 minutes, and the <code>reaped</code> alarm fires.</td></tr>
   </table>
+</section>
+
+<!-- ============================== ISOLATION ============================== -->
+<section id="isolation">
+  <h2><small>04 · Repo isolation</small>Repositories sharing an account stay apart</h2>
+  <figure>
+  <svg viewBox="0 0 1040 400" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
+    <defs><marker id="c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#3ccf91"/></marker></defs>
+    <g font-size="13">
+      <rect x="20" y="20" width="380" height="360" rx="16" fill="#121826" stroke="#3ccf91" stroke-dasharray="6 5"/>
+      <text x="40" y="48" fill="#3ccf91" font-weight="700" font-size="14">boundary · acme/app (id 3fa2…)</text>
+      <rect x="40" y="66" width="160" height="50" rx="10" fill="#182033" stroke="#26304a"/><text x="120" y="96" fill="#e6e9f2" text-anchor="middle">deploy role (OIDC)</text>
+      <rect x="220" y="66" width="160" height="50" rx="10" fill="#182033" stroke="#26304a"/><text x="300" y="96" fill="#e6e9f2" text-anchor="middle">control role</text>
+      <rect x="40" y="132" width="160" height="50" rx="10" fill="#182033" stroke="#26304a"/><text x="120" y="162" fill="#e6e9f2" text-anchor="middle">webhook role</text>
+      <rect x="220" y="132" width="160" height="50" rx="10" fill="#182033" stroke="#26304a"/><text x="300" y="162" fill="#e6e9f2" text-anchor="middle">runner role</text>
+      <text x="40" y="214" fill="#9aa4bd">Can only touch:</text>
+      <text x="40" y="238" fill="#e6e9f2" font-family="ui-monospace,Menlo,monospace" font-size="12">gha-microvm-3fa2…-*  (λ, SQS, DDB, IAM)</text>
+      <text x="40" y="260" fill="#e6e9f2" font-family="ui-monospace,Menlo,monospace" font-size="12">/gha-microvm/3fa2…/*  (SSM)</text>
+      <text x="40" y="282" fill="#e6e9f2" font-family="ui-monospace,Menlo,monospace" font-size="12">gha/acme/app/*        (job secrets)</text>
+      <text x="40" y="304" fill="#e6e9f2" font-family="ui-monospace,Menlo,monospace" font-size="12">microvm-image:gha-microvm-3fa2…*</text>
+      <text x="40" y="334" fill="#ff6b6b">✗ App key · ✗ other repos · ✗ shell tokens</text>
+      <text x="40" y="356" fill="#ff6b6b">✗ remove its boundary · ✗ new policy versions</text>
+
+      <rect x="640" y="20" width="380" height="360" rx="16" fill="#121826" stroke="#4ea1ff" stroke-dasharray="6 5"/>
+      <text x="660" y="48" fill="#4ea1ff" font-weight="700" font-size="14">boundary · acme/ledger (id 9c01…)</text>
+      <rect x="660" y="66" width="160" height="50" rx="10" fill="#182033" stroke="#26304a"/><text x="740" y="96" fill="#e6e9f2" text-anchor="middle">deploy role (OIDC)</text>
+      <rect x="840" y="66" width="160" height="50" rx="10" fill="#182033" stroke="#26304a"/><text x="920" y="96" fill="#e6e9f2" text-anchor="middle">control role</text>
+      <rect x="660" y="132" width="160" height="50" rx="10" fill="#182033" stroke="#26304a"/><text x="740" y="162" fill="#e6e9f2" text-anchor="middle">webhook role</text>
+      <rect x="840" y="132" width="160" height="50" rx="10" fill="#182033" stroke="#26304a"/><text x="920" y="162" fill="#e6e9f2" text-anchor="middle">runner role</text>
+      <text x="660" y="214" fill="#9aa4bd">Same rules, its own id.</text>
+
+      <rect x="430" y="140" width="180" height="120" rx="14" fill="#1d1430" stroke="#b48cff"/>
+      <text x="520" y="170" fill="#b48cff" font-weight="700" text-anchor="middle">token broker</text>
+      <text x="520" y="194" fill="#e6e9f2" text-anchor="middle" font-size="12">role name proves repo</text>
+      <text x="520" y="214" fill="#e6e9f2" text-anchor="middle" font-size="12">token scoped to 1 repo</text>
+      <text x="520" y="238" fill="#9aa4bd" text-anchor="middle" font-size="12">only reader of App key</text>
+      <path d="M380,92 C420,110 440,140 460,150" stroke="#3ccf91" stroke-width="2" fill="none" marker-end="url(#c)"/>
+      <path d="M840,92 C800,110 600,130 590,148" stroke="#4ea1ff" stroke-width="2" fill="none" marker-end="url(#c)"/>
+      <text x="520" y="300" fill="#ff6b6b" text-anchor="middle" font-size="13">✗ app's role asking for ledger → denied</text>
+    </g>
+  </svg>
+  <figcaption>Resource names carry <code>sha256(owner/repo)[:10]</code>, a fixed-length id, so no repository name can be a prefix of another's resources.</figcaption>
+  </figure>
+  <p>Details are on the <a href="security.html">security page</a>.</p>
 </section>
 
 <!-- ============================== REUSE ============================== -->
 <section id="reuse">
-  <h2><small>Decision · ADR-001</small>Terminate after every job — no VM reuse</h2>
+  <h2><small>ADR-001</small>Terminate after every job, no VM reuse</h2>
   <p class="lead">Keeping a finished VM idle so the next job starts faster saves little time and breaks the guarantee that every job gets a clean VM.</p>
-
   <table>
     <tr><th>Option</th><th>Start time</th><th>Isolation</th><th>Idle cost</th><th>Verdict</th></tr>
-    <tr><td>Reuse a running VM</td><td>Fastest</td><td>✗ inherits previous job's disk, Docker cache and processes</td><td>Full compute (~$0.25/h at 2 vCPU / 4 GB)</td><td>Rejected</td></tr>
-    <tr><td>Suspend after the job, resume for the next one</td><td>Fast</td><td>✗ same dirty state</td><td>Snapshot storage, counts against the memory quota</td><td>Rejected</td></tr>
-    <tr><td><strong>Fresh VM per job, terminate after</strong></td><td>Snapshot start + runner registration</td><td>✓ clean VM every time</td><td>None</td><td><strong>Chosen</strong></td></tr>
-    <tr><td>Warm pool of clean VMs (suspended before registering)</td><td>Slightly faster</td><td>✓ still one job per VM</td><td>Snapshot storage, uses memory quota</td><td>Only if M1 shows a real gap</td></tr>
+    <tr><td>Reuse a running VM</td><td>Fastest</td><td>✗ inherits the previous job's state</td><td>Full compute</td><td>Rejected</td></tr>
+    <tr><td>Suspend after the job, resume for the next one</td><td>Fast</td><td>✗ same dirty state</td><td>Snapshot storage, uses memory quota</td><td>Rejected</td></tr>
+    <tr><td><strong>Fresh VM per job, terminate after</strong></td><td>Snapshot start + registration</td><td>✓ clean every time</td><td>None</td><td><strong>Chosen</strong></td></tr>
+    <tr><td>Warm pool of clean, never-registered VMs</td><td>Slightly faster</td><td>✓ still one job per VM</td><td>Snapshot storage, uses memory quota</td><td>Only if measurements show a real gap</td></tr>
   </table>
-
-  <div class="grid">
-    <div class="card"><h4>Why the gain is small</h4><p><code>RunMicrovm</code> already starts from a memory snapshot, not a cold boot. Most of the remaining delay is runner registration and GitHub assigning the job, and reuse removes neither.</p></div>
-    <div class="card"><h4>JIT runners are single-use</h4><p>A reused VM would still need a new JIT config per job, delivered on resume. That means more state for little benefit.</p></div>
-    <div class="card ok"><h4>Make starts faster instead</h4><p>Bake the unpacked runner, toolchains and common actions and images into the snapshot. Start <code>dockerd</code> only when a job uses it.</p></div>
-    <div class="card warn"><h4>Measure first</h4><p>M1 records the time from <code>queued</code> to <code>in_progress</code>. Add the warm pool only if that number is too high.</p></div>
-  </div>
+  <p><code>RunMicrovm</code> already starts from a memory snapshot. Most of the remaining delay is registration and GitHub assigning the job, and reuse removes neither.</p>
 </section>
 
-<!-- ============================== SECRETS ============================== -->
-<section id="secrets">
-  <h2><small>04 · Secrets &amp; trust</small>Each repo sees only its own secrets</h2>
-  <p class="lead">Three IAM roles, each with one job. The runner role is scoped to the repo's prefix, so <code>repo-a</code> cannot read <code>repo-b</code> secrets even in the same account.</p>
-
-  <figure>
-  <svg viewBox="0 0 1040 380" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
-    <defs><marker id="c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#3ccf91"/></marker>
-    <marker id="cx" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#ff6b6b"/></marker></defs>
-
-    <g font-size="13">
-      <rect x="20" y="20" width="310" height="340" rx="14" fill="#121826" stroke="#4ea1ff"/>
-      <text x="40" y="50" fill="#4ea1ff" font-size="15" font-weight="700">dispatcher role</text>
-      <text x="40" y="76" fill="#9aa4bd">Lambda execution role</text>
-      <g fill="#e6e9f2"><text x="40" y="110">✓ secretsmanager:GetSecretValue</text><text x="58" y="128" fill="#9aa4bd">GitHub App key, webhook secret</text>
-      <text x="40" y="156">✓ lambda:RunMicrovm / Terminate</text><text x="58" y="174" fill="#9aa4bd">this repo's image only</text>
-      <text x="40" y="202">✓ iam:PassRole → runner role</text><text x="58" y="220" fill="#9aa4bd">PassedToService = lambda</text>
-      <text x="40" y="248">✓ lambda:PassNetworkConnector</text>
-      <text x="40" y="276">✓ ssm:PutParameter /gha/&lt;repo&gt;/jit/*</text>
-      <text x="40" y="304">✓ dynamodb on its own table</text></g>
-      <text x="40" y="340" fill="#ff6b6b">✗ no access to repo secrets</text>
-
-      <rect x="365" y="20" width="310" height="340" rx="14" fill="#121826" stroke="#3ccf91"/>
-      <text x="385" y="50" fill="#3ccf91" font-size="15" font-weight="700">runner role (ambient)</text>
-      <text x="385" y="76" fill="#9aa4bd">MicroVM execution role · IMDSv2</text>
-      <g fill="#e6e9f2"><text x="385" y="110">✓ ssm:Get/DeleteParameter</text><text x="403" y="128" fill="#9aa4bd">/gha/&lt;repo&gt;/jit/*</text>
-      <text x="385" y="156">✓ secretsmanager:GetSecretValue</text><text x="403" y="174" fill="#9aa4bd">gha/&lt;owner&gt;/&lt;repo&gt;/*</text>
-      <text x="385" y="202">✓ ssm:GetParameter*</text><text x="403" y="220" fill="#9aa4bd">/gha/&lt;owner&gt;/&lt;repo&gt;/*</text>
-      <text x="385" y="248">✓ kms:Decrypt (repo key)</text>
-      <text x="385" y="276">✓ logs:PutLogEvents</text>
-      <text x="385" y="304">+ additional_policy_arns</text></g>
-      <text x="385" y="340" fill="#ff6b6b">✗ no Terminate · no other repos</text>
-
-      <rect x="710" y="20" width="310" height="340" rx="14" fill="#121826" stroke="#b48cff"/>
-      <text x="730" y="50" fill="#b48cff" font-size="15" font-weight="700">deploy role (OIDC)</text>
-      <text x="730" y="76" fill="#9aa4bd">assumed by GitHub-hosted job</text>
-      <g fill="#e6e9f2"><text x="730" y="110">trust: token.actions.githubusercontent.com</text>
-      <text x="730" y="138">sub = repo:&lt;o&gt;/&lt;r&gt;:environment:runners</text>
-      <text x="730" y="166">✓ apply the repo-runner stack</text>
-      <text x="730" y="194">✓ bounded by permissions boundary</text>
-      <text x="730" y="222">✓ resources tagged gha-repo=&lt;repo&gt;</text></g>
-      <text x="730" y="262" fill="#9aa4bd">Optional, for sensitive prod secrets:</text>
-      <text x="730" y="282" fill="#9aa4bd">add OIDC roles bound to an Environment</text>
-      <text x="730" y="302" fill="#9aa4bd">with required reviewers.</text>
-      <text x="730" y="340" fill="#ff6b6b">✗ never on the runner itself</text>
-    </g>
-  </svg>
-  <figcaption>The runner role is ambient: every job on that runner gets it, including pull-request jobs. Keep only CI-grade secrets under the repo prefix.</figcaption>
-  </figure>
-
-  <div class="grid">
-    <div class="card warn"><h4>Private repos only</h4><p>GitHub advises against self-hosted runners on public repositories. If you need one, set "Require approval for all external contributors".</p></div>
-    <div class="card"><h4>Labels are not security</h4><p>Anyone who can edit a workflow can request the label. The repo boundary and prefix-scoped IAM are what isolate jobs.</p></div>
-    <div class="card"><h4>App key never in state</h4><p>Create the Secrets Manager value out of band. Terraform receives only the secret ARN.</p></div>
-    <div class="card"><h4>Egress</h4><p>Default: <code>INTERNET_EGRESS</code>. Optional: a <code>VPC_EGRESS</code> connector with NAT and a DNS firewall allowlist.</p></div>
-  </div>
-</section>
-
-<!-- ============================== MODULE ============================== -->
-<section id="module">
-  <h2><small>05 · Terraform</small>Repository layout &amp; module interface</h2>
-
-<pre><span class="c"># aws-abaschen/terraform-aws-microvm-github-runners</span>
-.
-├── modules/
-│   ├── runner-image/        <span class="c"># awscc_lambda_microvm_image + build role + S3 zip (can be shared per account)</span>
-│   ├── repo-runner/         <span class="c"># webhook λ, SQS+DLQ, dispatcher λ, sweeper, DynamoDB, roles, alarms</span>
-│   └── bootstrap/           <span class="c"># once per account: GitHub OIDC provider + per-repo deploy role + boundary</span>
-├── image/
-│   ├── Dockerfile           <span class="c"># FROM public.ecr.aws/lambda/microvms:al2023-minimal</span>
-│   └── supervisor/          <span class="c"># Go: lifecycle hooks, JIT fetch, dockerd, run.sh</span>
-├── lambda/                  <span class="c"># Go: cmd/webhook, cmd/dispatcher, cmd/sweeper (provided.al2023, arm64)</span>
-├── examples/
-│   ├── bootstrap-account/
-│   └── consumer-repo/       <span class="c"># infra/runners/main.tf + .github/workflows/deploy-runners.yml</span>
-├── docs/                    <span class="c"># this page (GitHub Pages)</span>
-└── justfile                 <span class="c"># build · test · package · deploy · docs</span></pre>
+<!-- ============================== MODULES ============================== -->
+<section id="modules">
+  <h2><small>05 · Terraform</small>Modules and inputs</h2>
+<pre><span class="c"># repository layout</span>
+cmd/lambda/          <span class="c"># one Go binary: webhook | dispatcher | sweeper | broker</span>
+cmd/supervisor/      <span class="c"># runs in the MicroVM: hooks, JIT fetch, dockerd, run.sh</span>
+internal/            <span class="c"># broker, runner (dispatch + sweep), github, webhook, awsx</span>
+image/Dockerfile     <span class="c"># FROM public.ecr.aws/lambda/microvms:al2023-minimal</span>
+modules/bootstrap/   modules/runner-image/   modules/repo-runner/
+examples/            <span class="c"># bootstrap-account, consumer-repo (infra + workflows)</span>
+justfile             <span class="c"># check · test · package · image-artifact · release-assets · deploy · drills</span></pre>
 
   <h3>Providers</h3>
   <table>
-    <tr><th>Provider</th><th>Version</th><th>Used for</th></tr>
-    <tr><td><code>hashicorp/aws</code></td><td><code>&gt;= 6.63, &lt; 7.0</code></td><td>Lambda, SQS, DynamoDB, IAM, Scheduler, <code>aws_lambdacore_network_connector</code></td></tr>
-    <tr><td><code>hashicorp/awscc</code></td><td><code>&gt;= 1.90</code></td><td><code>awscc_lambda_microvm_image</code> (hooks + memory arguments)</td></tr>
-    <tr><td><code>integrations/github</code></td><td><code>&gt;= 6.2</code> (optional)</td><td>Repository webhook, when <code>manage_webhook = true</code></td></tr>
+    <tr><th>Provider</th><th>Constraint</th><th>Why</th></tr>
+    <tr><td>Terraform</td><td><code>&gt;= 1.11</code> (tested with 1.17.2)</td><td>Ephemeral resources and write-only arguments keep secrets out of state.</td></tr>
+    <tr><td><code>hashicorp/aws</code></td><td><code>&gt;= 6.73, &lt; 7.0</code></td><td>Lambda, SQS, DynamoDB, IAM, <code>aws_lambdacore_network_connector</code></td></tr>
+    <tr><td><code>hashicorp/awscc</code></td><td><code>&gt;= 1.110, &lt; 2.0</code></td><td><code>awscc_lambda_microvm_image</code> exposes hooks, memory and capabilities.</td></tr>
+    <tr><td><code>hashicorp/random</code></td><td><code>&gt;= 3.7, &lt; 4.0</code></td><td>Ephemeral webhook secret</td></tr>
   </table>
 
-  <h3><code>repo-runner</code> inputs</h3>
-<pre><span class="k">module</span> <span class="s">"runners"</span> {
-  source = <span class="s">"github.com/aws-abaschen/terraform-aws-microvm-github-runners//modules/repo-runner?ref=v0.1.0"</span>
-
-  github_repository     = <span class="s">"my-org/my-repo"</span>
-  github_app_secret_arn = <span class="s">"arn:aws:secretsmanager:eu-west-1:111111111111:secret:gha/app-xyz"</span>
-  runner_labels         = [<span class="s">"self-hosted"</span>, <span class="s">"linux"</span>, <span class="s">"arm64"</span>, <span class="s">"microvm"</span>]
-
-  image = {
-    memory_mib = <span class="n">4096</span>          <span class="c"># 2 vCPU baseline, bursts to 8 vCPU</span>
-    docker     = <span class="n">true</span>
-  }                              <span class="c"># or image_arn = module.shared_image.arn</span>
-
-  max_job_minutes  = <span class="n">60</span>         <span class="c"># VM hard limit = 60 + 5 min margin</span>
-  max_concurrency  = <span class="n">5</span>
-
-  secret_prefixes  = [<span class="s">"gha/my-org/my-repo/"</span>]   <span class="c"># Secrets Manager</span>
-  parameter_paths  = [<span class="s">"/gha/my-org/my-repo/"</span>]  <span class="c"># SSM</span>
-  additional_policy_arns       = []
-  egress_network_connector_arn = <span class="n">null</span>     <span class="c"># null = INTERNET_EGRESS</span>
-  manage_webhook               = <span class="n">false</span>
+  <h3>Consumer configuration</h3>
+<pre><span class="k">module</span> <span class="s">"image"</span> {
+  source        = <span class="s">"github.com/aws-abaschen/terraform-aws-microvm-github-runners//modules/runner-image?ref=&lt;release-sha&gt;"</span>
+  repository    = <span class="s">"acme/app"</span>
+  artifact_path = <span class="s">".release/image-arm64.zip"</span>   <span class="c"># attestation-verified release asset</span>
+  architecture  = <span class="s">"ARM_64"</span>                     <span class="c"># or X86_64</span>
+  memory_mib    = <span class="n">4096</span>                         <span class="c"># 2 vCPU baseline, bursts to 8</span>
 }
 
-<span class="c"># outputs: webhook_url, webhook_secret_arn, runner_role_arn, queue_arn, dlq_arn</span></pre>
+<span class="k">module</span> <span class="s">"runners"</span> {
+  source          = <span class="s">"github.com/aws-abaschen/terraform-aws-microvm-github-runners//modules/repo-runner?ref=&lt;release-sha&gt;"</span>
+  repository      = <span class="s">"acme/app"</span>
+  lambda_zip_path = <span class="s">".release/lambda.zip"</span>
+  image_arn       = module.image.image_arn
+  image_version   = module.image.image_version
+  architecture    = module.image.architecture
+  max_job_minutes = <span class="n">60</span>        <span class="c"># VM hard limit = 65 min</span>
+  max_runners     = <span class="n">5</span>
+  <span class="c"># webhook_auth_type = "AWS_IAM"  # behind a central ingress</span>
+}</pre>
+  <p>Everything else (subnets, security group, connector, KMS key, broker, boundary) is read from the <code>/gha-microvm/platform/config</code> parameter written by <code>bootstrap</code>.</p>
 </section>
 
-<!-- ============================== USAGE ============================== -->
-<section id="usage">
-  <h2><small>06 · Usage</small>How a repository onboards</h2>
+<!-- ============================== ONBOARDING ============================== -->
+<section id="onboarding">
+  <h2><small>06 · Onboarding</small>From zero to a first job</h2>
   <ol class="steps">
-    <li><strong>Once per account:</strong> apply <code>modules/bootstrap</code>. It creates the GitHub OIDC provider and a deploy role per repo. Store the GitHub App key in Secrets Manager.</li>
-    <li><strong>Install the GitHub App</strong> on the repo with <em>Administration: write</em> and subscribe it to <em>Workflow jobs</em> events.</li>
-    <li><strong>In the repo</strong>, add <code>infra/runners/main.tf</code> calling <code>repo-runner</code>, and a <code>runners</code> Environment with required reviewers.</li>
-    <li><strong>Deploy from a GitHub-hosted runner</strong>, so the runners don't have to deploy themselves.</li>
-    <li><strong>Point the webhook</strong> at <code>webhook_url</code>, then use the labels in workflows.</li>
+    <li><strong>Platform, once per account:</strong> apply <code>bootstrap</code> with the VPC, subnets and the list of repositories. Put <code>{"app_id":…,"private_key":"…"}</code> into the <code>github_app_secret_arn</code> secret out of band.</li>
+    <li><strong>GitHub App:</strong> grant repository permissions <em>Administration: write</em> and <em>Actions: read</em>, install it only on onboarded repositories.</li>
+    <li><strong>Repository:</strong> create the <code>runners</code> Environment (required reviewers, <code>main</code> only), and set the variables <code>RUNNERS_DEPLOY_ROLE_ARN</code>, <code>RUNNERS_STATE_BUCKET</code> and <code>RUNNERS_STATE_KEY</code> from the bootstrap outputs.</li>
+    <li><strong>Deploy:</strong> copy <code>examples/consumer-repo</code>. The workflow verifies release checksums and attestations, plans, archives the plan and applies it.</li>
+    <li><strong>Webhook:</strong> add a repository webhook to <code>webhook_url</code> with content type JSON, only the <em>Workflow jobs</em> event, and the secret from <code>webhook_secret_arn</code>.</li>
+    <li><strong>Use it:</strong> <code>runs-on: [self-hosted, linux, arm64, microvm]</code> and <code>timeout-minutes: 60</code>.</li>
   </ol>
-
-<pre><span class="c"># .github/workflows/deploy-runners.yml</span>
-<span class="k">on</span>: { push: { branches: [main], paths: [<span class="s">"infra/runners/**"</span>] }, workflow_dispatch: {} }
-<span class="k">permissions</span>: { id-token: write, contents: read }
-<span class="k">jobs</span>:
-  apply:
-    runs-on: ubuntu-latest
-    environment: runners
-    steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
-        with: { role-to-assume: <span class="s">${{ vars.RUNNERS_DEPLOY_ROLE_ARN }}</span>, aws-region: eu-west-1 }
-      - uses: hashicorp/setup-terraform@v3
-      - run: terraform -chdir=infra/runners init &amp;&amp; terraform -chdir=infra/runners apply -auto-approve</pre>
-
-<pre><span class="c"># .github/workflows/ci.yml</span>
+<pre><span class="c"># .github/workflows/ci.yml (consumer)</span>
 <span class="k">jobs</span>:
   build:
-    runs-on: [self-hosted, microvm]
+    runs-on: [self-hosted, linux, arm64, microvm]
     timeout-minutes: <span class="n">60</span>
     steps:
-      - uses: actions/checkout@v4
-      - run: |
-          TOKEN=$(aws secretsmanager get-secret-value \
-            --secret-id gha/my-org/my-repo/npm-token --query SecretString --output text)
-          make build</pre>
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 <span class="c"># v7.0.1</span>
+        with:
+          persist-credentials: false
+      - run: make build</pre>
 </section>
 
 <!-- ============================== COSTS ============================== -->
@@ -471,45 +414,20 @@
   <h2><small>07 · Costs &amp; limits</small>What to expect</h2>
   <table>
     <tr><th>Item</th><th>Value</th></tr>
-    <tr><td>Runner 2 vCPU / 4 GB (us-east-1)</td><td>≈ $0.0042 / min of job, billed per second</td></tr>
-    <tr><td>10-min job</td><td>≈ $0.05 (compute + snapshot read)</td></tr>
-    <tr><td>Idle stack per repo</td><td>≈ $1 / month (2 secrets, plus requests on free tiers)</td></tr>
-    <tr><td>Max per MicroVM</td><td>16 vCPU · 32 GB RAM · 32 GB disk</td></tr>
-    <tr><td>Account memory quota</td><td>400 GB per Region by default. New accounts may start lower, so request an increase.</td></tr>
-    <tr><td><code>RunMicrovm</code> rate</td><td>5/s documented. New accounts are reported at 1/s.</td></tr>
-    <tr><td>Images</td><td>100 per Region, 50 versions each. The module prunes old versions.</td></tr>
+    <tr><td>Runner 2 vCPU / 4 GB (us-east-1)</td><td>≈ $0.0042 per minute of job, billed per second</td></tr>
+    <tr><td>Idle per repository</td><td>≈ $1 per month (secret, alarms; Lambda, SQS and DynamoDB on demand)</td></tr>
+    <tr><td>Idle per account (bootstrap)</td><td>KMS key, connector ENIs, optional local endpoints (≈ $7–8 per endpoint per AZ per month)</td></tr>
+    <tr><td>Max per MicroVM</td><td>16 vCPU, 32 GB RAM, 32 GB disk, 8 h</td></tr>
+    <tr><td>Account memory quota</td><td>400 GB per Region by default; running and suspended VMs count. New accounts may start lower.</td></tr>
+    <tr><td><code>RunMicrovm</code> rate</td><td>5 per second documented; request increases before go-live.</td></tr>
   </table>
-  <p class="lead">Prices are mid-2026 figures for us-east-1; eu-west-1 costs about 5% more. Check the AWS Lambda pricing page before committing to numbers.</p>
-</section>
-
-<!-- ============================== PLAN ============================== -->
-<section id="plan">
-  <h2><small>08 · Plan</small>Milestones</h2>
-  <table>
-    <tr><th>#</th><th>Milestone</th><th>Done when</th></tr>
-    <tr><td><span class="pill">M1</span></td><td>Runner image + supervisor</td><td>A manual <code>RunMicrovm</code> with a hand-made JIT config runs a hello-world job. The time from <code>queued</code> to <code>in_progress</code> is measured.</td></tr>
-    <tr><td><span class="pill">M2</span></td><td>webhook + dispatcher + DynamoDB</td><td>A pushed workflow gets a VM, and the VM is terminated on <code>completed</code>.</td></tr>
-    <tr><td><span class="pill">M3</span></td><td>Sweeper, DLQ alarms, 65-min reaper</td><td>Killing the webhook still gets jobs picked up within 5 min.</td></tr>
-    <tr><td><span class="pill">M4</span></td><td>bootstrap module + consumer example</td><td>A new repo onboards with only its own workflow.</td></tr>
-    <tr><td><span class="pill">M5</span></td><td>Release artifacts + docs</td><td>Tagged <code>v0.1.0</code> with checksummed Lambda zips.</td></tr>
-  </table>
-
-  <h3>To check on a live account first</h3>
-  <ul>
-    <li>The real <code>runHookPayload</code> size limit. Prior art saw 4 KB, not the documented 16 KB; we only pass an SSM path.</li>
-    <li>Lifecycle hooks fire with <code>NO_INGRESS</code>.</li>
-    <li>The IMDSv2 credential path inside the guest.</li>
-    <li>Docker inside the VM: DNS <code>169.254.169.253</code>, <code>overlay2</code>, <code>nofile</code> limit.</li>
-  </ul>
+  <p>Prices are mid-2026 figures for us-east-1. Check the AWS Lambda pricing page for your Region.</p>
 </section>
 
 </main>
 
 <footer>
-  aws-abaschen · <a href="https://github.com/aws-abaschen/terraform-aws-microvm-github-runners">source</a> ·
-  prior art: <a href="https://github.com/tarb/terraform-aws-gha-lambdamicrovm-runners">tarb</a>,
-  <a href="https://github.com/mkdev-me/terraform-aws-github-runner-lambda-microvms">mkdev</a>,
-  <a href="https://github.com/github-aws-runners/terraform-aws-github-runner">github-aws-runners</a>
+  aws-abaschen · <a href="https://github.com/aws-abaschen/terraform-aws-microvm-github-runners">source</a> · MIT
 </footer>
 </body>
 </html>
