@@ -1,3 +1,5 @@
+//go:build linux
+
 // Command supervisor runs inside the MicroVM. It serves the Lambda MicroVM
 // lifecycle hooks, fetches the one-time JIT config, starts dockerd and runs
 // exactly one GitHub Actions job.
