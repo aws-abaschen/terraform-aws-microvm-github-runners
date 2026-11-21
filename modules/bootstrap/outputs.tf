@@ -37,12 +37,12 @@ output "alarm_topic_arn" {
 }
 
 output "repositories" {
-  description = "Per repository: id, deploy role and boundary. Store deploy_role_arn as the RUNNERS_DEPLOY_ROLE_ARN variable of the repository."
+  description = "Per repository: id, deploy role and the shared boundary. Store deploy_role_arn as the RUNNERS_DEPLOY_ROLE_ARN variable of the repository."
   value = {
     for repo, r in local.repos : repo => {
       id              = r.id
       deploy_role_arn = aws_iam_role.deploy[repo].arn
-      boundary_arn    = aws_iam_policy.repo[repo].arn
+      boundary_arn    = aws_iam_policy.boundary.arn
       state_key       = "${r.id}/runners.tfstate"
     }
   }

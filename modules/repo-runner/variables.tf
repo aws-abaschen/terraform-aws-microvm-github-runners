@@ -81,16 +81,10 @@ variable "additional_runner_policy_json" {
   default     = null
 }
 
-variable "job_secret_prefixes" {
-  description = "Secrets Manager name prefixes jobs may read. Must be within what bootstrap allowed for this repository."
-  type        = list(string)
-  default     = null
-}
-
-variable "job_parameter_paths" {
-  description = "SSM parameter paths jobs may read. Must be within what bootstrap allowed for this repository."
-  type        = list(string)
-  default     = null
+variable "reserve_concurrency" {
+  description = "Reserve Lambda concurrency per function (webhook 20, dispatcher 5, sweeper 1). Off by default: 26 reserved per repository would fill the default account quota of 1,000 at about 34 repositories."
+  type        = bool
+  default     = false
 }
 
 variable "webhook_auth_type" {

@@ -132,14 +132,31 @@ data "aws_iam_policy_document" "runner" {
     resources = ["arn:${local.partition}:ssm:${local.region}:${local.account}:parameter${local.param_prefix}/jit/*"]
   }
   statement {
-    sid       = "JobSecrets"
-    actions   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
-    resources = [for p in local.job_secret_prefixes : "arn:${local.partition}:secretsmanager:${local.region}:${local.account}:secret:${trimsuffix(p, "/")}/*"]
+    sid     = "JobData"
+    actions = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret", "ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
+    resources = [
+      "arn:${local.partition}:secretsmanager:${local.region}:${local.account}:secret:gha/${local.repo}/*",
+      "arn:${local.partition}:ssm:${local.region}:${local.account}:parameter/gha/${local.repo}/*",
+    ]
   }
+  # Secrets and parameters elsewhere are shared with this repository's jobs by
+  # tagging them gha-repo-id=<id> (only this repository and administrators may set that tag).
   statement {
-    sid       = "JobParameters"
-    actions   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
-    resources = [for p in local.job_parameter_paths : "arn:${local.partition}:ssm:${local.region}:${local.account}:parameter${trimsuffix(p, "/")}/*"]
+    sid       = "TaggedJobData"
+    actions   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret", "ssm:GetParameter", "ssm:GetParameters"]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/gha-repo-id"
+      values   = [local.id]
+    }
+  }
+  # The webhook secret also carries the repository tag: jobs must not read it.
+  statement {
+    sid       = "NoPlatformSecrets"
+    effect    = "Deny"
+    actions   = ["secretsmanager:*"]
+    resources = ["arn:${local.partition}:secretsmanager:${local.region}:${local.account}:secret:${local.prefix}/*"]
   }
   statement {
     sid       = "Decrypt"

@@ -36,10 +36,9 @@ module "runners_platform" {
 
   repositories = {
     "acme/payments-api" = { environment = "runners" }
-    "acme/ledger" = {
-      environment         = "runners"
-      job_secret_prefixes = ["gha/acme/ledger/"]
-    }
+    # Jobs read gha/acme/ledger/* secrets and parameters, plus anything
+    # tagged gha-repo-id=<id of acme/ledger>.
+    "acme/ledger" = { environment = "runners" }
   }
 
   alarm_topic_arn    = null # or the topic of your incident management tool

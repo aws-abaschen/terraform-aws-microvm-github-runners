@@ -48,7 +48,7 @@
     <div class="card ok"><h4>Lambda MicroVMs, one job per VM</h4><p>A fresh Firecracker VM per job, per-second billing and no idle cost. The one-hour cap is well inside the 8-hour MicroVM limit.</p></div>
     <div class="card ok"><h4>Everything inside your VPC</h4><p>Lambdas and MicroVMs use your private subnets. MicroVMs attach through a <code>VPC_EGRESS</code> connector, never <code>INTERNET_EGRESS</code>. Traffic follows the Transit Gateway to central egress and inspection.</p></div>
     <div class="card ok"><h4>Platform-owned token broker</h4><p>Only the broker reads the GitHub App key. A repository proves its IAM identity with a presigned STS call and gets a one-hour token for its own repository only.</p></div>
-    <div class="card ok"><h4>Per-repo IAM boundary</h4><p>Each repository's deploy role, and every role it creates, is capped by a boundary tied to <code>gha-microvm-&lt;repo-id&gt;-*</code>. Repos sharing an account cannot touch each other.</p></div>
+    <div class="card ok"><h4>One ABAC boundary per account</h4><p>Each repository's roles carry its <code>gha-repo-id</code> tag. One fixed-size boundary scopes them to <code>gha-microvm-&lt;repo-id&gt;-*</code> through policy variables, and SCPs keep the tags honest. Repos sharing an account cannot touch each other. See <a href="iam.html">IAM design</a>.</p></div>
     <div class="card ok"><h4>Per-repo MicroVM image</h4><p><code>Get</code>/<code>TerminateMicrovm</code> are scoped to an image ARN. One image per repo means a dispatcher can only kill its own VMs.</p></div>
     <div class="card ok"><h4>arm64 by default, x64 available</h4><p>Base image version 3 adds <code>X86_64</code>. Graviton is the cheaper default; pick x64 per repo when toolchains need it.</p></div>
     <div class="card warn"><h4>Public webhook, HMAC-verified</h4><p>GitHub cannot sign SigV4, so the Function URL is public with HMAC checks by default. Set <code>webhook_auth_type = "AWS_IAM"</code> to accept calls only from a central ingress with WAF.</p></div>
@@ -206,7 +206,7 @@
 
   <table>
     <tr><th>Module</th><th>Applied by</th><th>Creates</th></tr>
-    <tr><td><code>bootstrap</code></td><td>Platform team, once per account and Region</td><td>KMS key, artifact and state buckets, runner security group, <code>VPC_EGRESS</code> connector, optional local endpoints, GitHub OIDC provider, per-repo boundary and deploy role, token broker, App key secret, alarm topic, platform config parameter</td></tr>
+    <tr><td><code>bootstrap</code></td><td>Platform team, once per account and Region</td><td>KMS key, artifact and state buckets, runner security group, <code>VPC_EGRESS</code> connector, optional local endpoints, GitHub OIDC provider, generic boundary, registry and deploy roles, token broker, App key secret, alarm topic, platform config parameter</td></tr>
     <tr><td><code>runner-image</code></td><td>Repository workflow</td><td>Image artifact upload, build role, MicroVM image (arm64 or x64, Docker on)</td></tr>
     <tr><td><code>repo-runner</code></td><td>Repository workflow</td><td>Webhook, queue + DLQ, dispatcher, sweeper, state table, runner role, webhook secret (write-only), alarms</td></tr>
   </table>

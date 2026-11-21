@@ -257,6 +257,7 @@ resource "aws_ssm_parameter" "platform" {
     alarm_topic_arn       = local.alarm_topic_arn
     github_api_url        = var.github_api_url
     log_retention_days    = var.log_retention_days
-    boundaries            = { for repo, r in local.repos : repo => aws_iam_policy.repo[repo].arn }
+    boundary_arn          = aws_iam_policy.boundary.arn
+    registry_path         = "/${local.prefix}/registry"
   })
 }

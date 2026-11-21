@@ -15,7 +15,7 @@ locals {
   account   = data.aws_caller_identity.this.account_id
   region    = data.aws_region.this.region
   partition = data.aws_partition.this.partition
-  boundary  = local.platform.boundaries[local.repo]
+  boundary  = local.platform.boundary_arn
   kms       = local.platform.kms_key_arn
   retention = local.platform.log_retention_days
   tags      = merge(var.tags, { "gha-repo" = local.repo, "gha-repo-id" = local.id, "managed-by" = "terraform" })
@@ -25,15 +25,16 @@ locals {
   max_duration_s = (var.max_job_minutes + 5) * 60
   param_prefix   = "/${local.prefix}/${local.id}"
   no_ingress     = "arn:${local.partition}:lambda:${local.region}:aws:network-connector:aws-network-connector:NO_INGRESS"
-
-  job_secret_prefixes = coalesce(var.job_secret_prefixes, ["gha/${local.repo}/"])
-  job_parameter_paths = coalesce(var.job_parameter_paths, ["/gha/${local.repo}/"])
 }
 
-check "repository_onboarded" {
-  assert {
-    condition     = contains(keys(local.platform.boundaries), local.repo)
-    error_message = "Repository ${local.repo} is not onboarded in the bootstrap module of this account."
+# Fails when the repository is not onboarded by bootstrap in this account.
+data "aws_ssm_parameter" "registry" {
+  name = "${local.platform.registry_path}/${local.id}"
+  lifecycle {
+    postcondition {
+      condition     = nonsensitive(jsondecode(self.value).repository) == local.repo
+      error_message = "The registry entry ${local.platform.registry_path}/${local.id} belongs to another repository."
+    }
   }
 }
 

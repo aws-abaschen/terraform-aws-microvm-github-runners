@@ -176,13 +176,9 @@ func runBroker(ctx context.Context, awsCfg aws.Config, log *slog.Logger) {
 		log.Error("github app", "err", err)
 		os.Exit(1)
 	}
-	allowed := map[string]bool{}
-	for _, r := range labels.Split(env("ALLOWED_REPOSITORIES")) {
-		allowed[strings.ToLower(r)] = true
-	}
 	b := &broker.Broker{
 		Prefix: env("NAME_PREFIX"), Account: env("ACCOUNT_ID"), Region: awsCfg.Region, Partition: env("PARTITION"),
-		Allowed: allowed, Tokens: app, HTTP: &http.Client{Timeout: 10 * time.Second}, Log: log, Now: time.Now,
+		Registry: &awsx.Registry{Client: ssm.NewFromConfig(awsCfg), Prefix: env("REGISTRY_PREFIX")}, Tokens: app, HTTP: &http.Client{Timeout: 10 * time.Second}, Log: log, Now: time.Now,
 	}
 	lambda.Start(b.Handle)
 }

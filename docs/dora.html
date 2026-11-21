@@ -36,7 +36,7 @@
     </tr>
     <tr>
       <td><strong>Art. 9</strong> Protection and prevention</td>
-      <td>One VM per job; least privilege with per-repo boundaries; KMS CMK with rotation on logs, queues, tables, parameters, secrets, artifacts, state and MicroVM memory; no NAT, central inspected egress; <code>NO_INGRESS</code>; secrets kept out of Terraform state; SHA-pinned actions and runner; provenance attestations and SBOM; change through reviewed Environments with archived plans.</td>
+      <td>One VM per job; least privilege with a tag-scoped (ABAC) boundary and organization guardrails; KMS CMK with rotation on logs, queues, tables, parameters, secrets, artifacts, state and MicroVM memory; no NAT, central inspected egress; <code>NO_INGRESS</code>; secrets kept out of Terraform state; SHA-pinned actions and runner; provenance attestations and SBOM; change through reviewed Environments with archived plans.</td>
       <td>Central firewall rules, SCPs, GitHub organisation policies, approval of changes.</td>
     </tr>
     <tr>

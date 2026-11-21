@@ -65,6 +65,10 @@ data "aws_iam_policy_document" "broker" {
     resources = [aws_kms_key.this.arn]
   }
   statement {
+    actions   = ["ssm:GetParameter"]
+    resources = ["arn:${local.partition}:ssm:${local.region}:${local.account}:parameter/${local.prefix}/registry/*"]
+  }
+  statement {
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
     resources = ["${aws_cloudwatch_log_group.broker.arn}:*"]
   }
@@ -121,13 +125,13 @@ resource "aws_lambda_function" "broker" {
   }
   environment {
     variables = {
-      FUNCTION_ROLE        = "broker"
-      APP_SECRET_ARN       = aws_secretsmanager_secret.app.arn
-      GITHUB_API_URL       = var.github_api_url
-      NAME_PREFIX          = local.prefix
-      ACCOUNT_ID           = local.account
-      PARTITION            = local.partition
-      ALLOWED_REPOSITORIES = join(",", keys(local.repos))
+      FUNCTION_ROLE   = "broker"
+      APP_SECRET_ARN  = aws_secretsmanager_secret.app.arn
+      GITHUB_API_URL  = var.github_api_url
+      NAME_PREFIX     = local.prefix
+      ACCOUNT_ID      = local.account
+      PARTITION       = local.partition
+      REGISTRY_PREFIX = "/${local.prefix}/registry"
     }
   }
   tags = local.tags

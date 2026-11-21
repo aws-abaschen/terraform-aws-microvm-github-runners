@@ -7,215 +7,50 @@ resource "aws_iam_openid_connect_provider" "github" {
 
 locals {
   oidc_provider_arn = "arn:${local.partition}:iam::${local.account}:oidc-provider/${var.github_oidc_host}"
-  arn = {
-    lambda = "arn:${local.partition}:lambda:${local.region}:${local.account}"
-    logs   = "arn:${local.partition}:logs:${local.region}:${local.account}"
-    iam    = "arn:${local.partition}:iam::${local.account}"
-    ssm    = "arn:${local.partition}:ssm:${local.region}:${local.account}"
-    sm     = "arn:${local.partition}:secretsmanager:${local.region}:${local.account}"
-  }
+  repo_tags         = { for repo, r in local.repos : repo => { "gha-repo" = repo, "gha-repo-id" = r.id } }
 }
 
-# One policy per repository. It is BOTH the deploy role's identity policy and
-# the permissions boundary of the deploy role and of every role the repository
-# creates. A repository can therefore only ever touch resources named
-# <prefix>-<repo-id>-*, its own SSM/Secrets paths and its own MicroVM image.
-data "aws_iam_policy_document" "repo" {
-  # checkov:skip=CKV_AWS_356:"*" only for actions without resource-level permissions or guarded by conditions.
-  # checkov:skip=CKV_AWS_111:Same as above; every write is scoped by name or condition.
-  for_each = local.repos
-
-  statement {
-    sid       = "OwnFunctions"
-    actions   = ["lambda:*"]
-    resources = ["${local.arn.lambda}:function:${each.value.base}-*"]
-  }
-  statement {
-    sid       = "OwnEventSourceMappings"
-    actions   = ["lambda:*EventSourceMapping", "lambda:TagResource", "lambda:ListTags"]
-    resources = ["*"]
-    condition {
-      test     = "ArnLike"
-      variable = "lambda:FunctionArn"
-      values   = ["${local.arn.lambda}:function:${each.value.base}-*"]
-    }
-  }
-  statement {
-    sid       = "CreateOwnImage"
-    actions   = ["lambda:CreateMicrovmImage", "lambda:TagResource"]
-    resources = ["*"]
-    condition {
-      test     = "StringEquals"
-      variable = "aws:RequestTag/gha-repo-id"
-      values   = [each.value.id]
-    }
-  }
-  statement {
-    sid       = "OwnImageAndMicroVMs"
-    actions   = ["lambda:*Microvm*", "lambda:TagResource", "lambda:UntagResource", "lambda:ListTags"]
-    resources = ["${local.arn.lambda}:microvm-image:${each.value.base}*"]
-  }
-  statement {
-    sid       = "TokenBroker"
-    actions   = ["lambda:InvokeFunction"]
-    resources = [aws_lambda_function.broker.arn]
-  }
-  statement {
-    sid = "OwnRoles"
-    actions = [
-      "iam:GetRole", "iam:UpdateRole", "iam:DeleteRole", "iam:TagRole", "iam:UntagRole", "iam:UpdateAssumeRolePolicy", "iam:PassRole",
-      "iam:*RolePolicy", # Put, Get, Delete, Attach, Detach
-      "iam:List*",       # role policies, attached policies, instance profiles, tags of own roles
-    ]
-    resources = ["${local.arn.iam}:role/${each.value.base}-*"]
-  }
-  statement {
-    sid       = "CreateOwnRolesWithBoundary"
-    actions   = ["iam:CreateRole", "iam:PutRolePermissionsBoundary"]
-    resources = ["${local.arn.iam}:role/${each.value.base}-*"]
-    condition {
-      test     = "StringEquals"
-      variable = "iam:PermissionsBoundary"
-      values   = ["${local.arn.iam}:policy/${local.prefix}-boundary-${each.value.id}"]
-    }
-  }
-  statement {
-    sid       = "OwnQueues"
-    actions   = ["sqs:*"]
-    resources = ["arn:${local.partition}:sqs:${local.region}:${local.account}:${each.value.base}-*"]
-  }
-  statement {
-    sid       = "OwnTables"
-    actions   = ["dynamodb:*"]
-    resources = ["arn:${local.partition}:dynamodb:${local.region}:${local.account}:table/${each.value.base}-*"]
-  }
-  statement {
-    sid       = "OwnParameters"
-    actions   = ["ssm:*"]
-    resources = ["${local.arn.ssm}:parameter/${local.prefix}/${each.value.id}/*"]
-  }
-  statement {
-    sid       = "JobParameters"
-    actions   = ["ssm:GetParameter*"]
-    resources = [for p in coalesce(each.value.job_parameter_paths, ["/gha/${each.key}/"]) : "${local.arn.ssm}:parameter${trimsuffix(p, "/")}/*"]
-  }
-  statement {
-    sid       = "PlatformConfig"
-    actions   = ["ssm:GetParameter"]
-    resources = ["${local.arn.ssm}:parameter/${local.prefix}/platform/config"]
-  }
-  statement {
-    sid       = "OwnSecrets"
-    actions   = ["secretsmanager:*"]
-    resources = ["${local.arn.sm}:secret:${local.prefix}/${each.value.id}/*"]
-  }
-  statement {
-    sid       = "JobSecrets"
-    actions   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
-    resources = [for p in coalesce(each.value.job_secret_prefixes, ["gha/${each.key}/"]) : "${local.arn.sm}:secret:${trimsuffix(p, "/")}/*"]
-  }
-  statement {
-    sid     = "OwnLogs"
-    actions = ["logs:*"]
-    resources = [
-      "${local.arn.logs}:log-group:/aws/lambda/${each.value.base}-*",
-      "${local.arn.logs}:log-group:/aws/lambda-microvms/${each.value.base}*",
-    ]
-  }
-  statement {
-    sid       = "OwnArtifactsAndState"
-    actions   = ["s3:*Object", "s3:GetObjectVersion", "s3:*ObjectTagging"]
-    resources = [for b in aws_s3_bucket.this : "${b.arn}/${each.value.id}/*"]
-  }
-  statement {
-    sid       = "ListOwnPrefix"
-    actions   = ["s3:ListBucket"]
-    resources = [for b in aws_s3_bucket.this : b.arn]
-    condition {
-      test     = "StringLike"
-      variable = "s3:prefix"
-      values   = ["${each.value.id}/*"]
-    }
-  }
-  statement {
-    sid       = "BucketMeta"
-    actions   = ["s3:GetBucketLocation", "s3:GetBucketVersioning"]
-    resources = [for b in aws_s3_bucket.this : b.arn]
-  }
-  statement {
-    sid       = "PlatformKey"
-    actions   = ["kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:DescribeKey", "kms:CreateGrant"]
-    resources = [aws_kms_key.this.arn]
-  }
-  statement {
-    sid       = "OwnSchedules"
-    actions   = ["scheduler:*"]
-    resources = ["arn:${local.partition}:scheduler:${local.region}:${local.account}:schedule/default/${each.value.base}-*"]
-  }
-  statement {
-    sid       = "OwnAlarms"
-    actions   = ["cloudwatch:*Alarm*", "cloudwatch:*Resource"]
-    resources = ["arn:${local.partition}:cloudwatch:${local.region}:${local.account}:alarm:${each.value.base}-*"]
-  }
-  # Actions without resource-level permissions, or read-only, in one statement:
-  # the policy is also a permissions boundary and must stay under 6,144 characters.
-  statement {
-    sid = "Unscoped"
-    actions = [
-      "lambda:List*", "lambda:GetAccountSettings", "lambda:GetNetworkConnector", "lambda:PassNetworkConnector", "lambda:GetCodeSigningConfig",
-      "cloudformation:CreateResource", "cloudformation:GetResource", "cloudformation:UpdateResource", "cloudformation:DeleteResource",
-      "cloudformation:GetResourceRequestStatus", "cloudformation:ListResources", # Cloud Control, used by the awscc provider
-      "iam:GetPolicy", "iam:GetPolicyVersion", "iam:ListPolicyVersions",
-      "ssm:DescribeParameters", "secretsmanager:GetRandomPassword", "logs:DescribeLogGroups", "logs:ListTagsForResource",
-      "cloudwatch:PutMetricData", "cloudwatch:DescribeAlarms", "xray:PutTraceSegments", "xray:PutTelemetryRecords", "sts:GetCallerIdentity",
-      "ec2:CreateNetworkInterface", "ec2:DeleteNetworkInterface", "ec2:DescribeNetworkInterfaces", "ec2:*PrivateIpAddresses", # VPC Lambdas
-      "ec2:DescribeSubnets", "ec2:DescribeSecurityGroups", "ec2:DescribeVpcs",
-    ]
-    resources = ["*"]
-  }
-  dynamic "statement" {
-    for_each = length(each.value.additional_job_actions) > 0 ? [1] : []
-    content {
-      sid       = "AdditionalJobActions"
-      actions   = each.value.additional_job_actions
-      resources = ["*"]
-    }
-  }
-
-  # Guard rails that hold even if an allow above is widened later.
-  statement {
-    sid       = "NoBoundaryEscape"
-    effect    = "Deny"
-    actions   = ["iam:DeleteRolePermissionsBoundary", "iam:CreatePolicyVersion", "iam:SetDefaultPolicyVersion", "iam:DeletePolicy", "iam:CreateUser", "iam:CreateAccessKey"]
-    resources = ["*"]
-  }
-  statement {
-    sid       = "NoPlatformSecret"
-    effect    = "Deny"
-    actions   = ["secretsmanager:*"]
-    resources = [aws_secretsmanager_secret.app.arn]
-  }
-  statement {
-    sid       = "NoShellIngress"
-    effect    = "Deny"
-    actions   = ["lambda:CreateMicrovmShellAuthToken", "lambda:CreateMicrovmAuthToken"]
-    resources = ["*"]
-  }
+# One generic policy per account (modules/bootstrap/policy). It is BOTH the
+# deploy role's identity policy and the permissions boundary of the deploy
+# role and of every role a repository creates. The principal tags gha-repo-id
+# and gha-repo select the repository, so adding repositories never changes it.
+module "policy" {
+  source                 = "./policy"
+  name_prefix            = local.prefix
+  partition              = local.partition
+  region                 = local.region
+  account                = local.account
+  bucket_names           = [for b in aws_s3_bucket.this : b.id]
+  kms_key_arn            = aws_kms_key.this.arn
+  broker_function_arn    = aws_lambda_function.broker.arn
+  app_secret_arn         = aws_secretsmanager_secret.app.arn
+  additional_job_actions = var.additional_job_actions
 }
 
-resource "aws_iam_policy" "repo" {
-  for_each    = local.repos
-  name        = "${local.prefix}-boundary-${each.value.id}"
-  description = "Deploy policy and permissions boundary for ${each.key}"
-  policy      = data.aws_iam_policy_document.repo[each.key].json
-  tags        = merge(local.tags, { "gha-repo" = each.key, "gha-repo-id" = each.value.id })
+resource "aws_iam_policy" "boundary" {
+  name        = module.policy.name
+  description = "Deploy policy and permissions boundary of every onboarded repository (ABAC on gha-repo-id)"
+  policy      = module.policy.json
+  tags        = local.tags
 
   lifecycle {
     precondition {
-      condition     = length(data.aws_iam_policy_document.repo[each.key].minified_json) <= 6144
-      error_message = "The boundary policy of ${each.key} exceeds the IAM limit of 6,144 characters: shorten job_parameter_paths, job_secret_prefixes or additional_job_actions."
+      condition     = length(module.policy.minified_json) <= 6144
+      error_message = "The boundary policy exceeds the IAM limit of 6,144 characters: shorten additional_job_actions."
     }
   }
+}
+
+# Onboarding record read by the broker and by repo-runner. One small
+# parameter per repository; nothing else in the account depends on the list.
+resource "aws_ssm_parameter" "registry" {
+  for_each = local.repos
+  name     = "/${local.prefix}/registry/${each.value.id}"
+  type     = "SecureString"
+  key_id   = aws_kms_key.this.arn
+  tier     = "Standard"
+  value    = jsonencode({ repository = each.key, environment = each.value.environment })
+  tags     = merge(local.tags, local.repo_tags[each.key])
 }
 
 data "aws_iam_policy_document" "deploy_trust" {
@@ -245,13 +80,14 @@ resource "aws_iam_role" "deploy" {
   name                 = "${local.prefix}-deploy-${each.value.id}"
   description          = "Deploys MicroVM runners for ${each.key} from its ${each.value.environment} environment"
   assume_role_policy   = data.aws_iam_policy_document.deploy_trust[each.key].json
-  permissions_boundary = aws_iam_policy.repo[each.key].arn
+  permissions_boundary = aws_iam_policy.boundary.arn
   max_session_duration = 3600
-  tags                 = merge(local.tags, { "gha-repo" = each.key, "gha-repo-id" = each.value.id })
+  # Principal tags: the generic policy scopes everything to them.
+  tags = merge(local.tags, local.repo_tags[each.key])
 }
 
 resource "aws_iam_role_policy_attachment" "deploy" {
   for_each   = local.repos
   role       = aws_iam_role.deploy[each.key].name
-  policy_arn = aws_iam_policy.repo[each.key].arn
+  policy_arn = aws_iam_policy.boundary.arn
 }

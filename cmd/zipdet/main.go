@@ -64,7 +64,7 @@ func write(out, dir, execList string, names []string) error {
 			return err
 		}
 		_, err = io.Copy(w, src)
-		src.Close()
+		_ = src.Close() // read-only file: a close error cannot lose data
 		if err != nil {
 			return err
 		}

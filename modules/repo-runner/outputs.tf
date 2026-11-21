@@ -38,3 +38,8 @@ output "repository_id" {
   description = "Short id used in every resource name."
   value       = local.id
 }
+
+output "deploy_environment" {
+  description = "GitHub Environment the repository deploys from, as onboarded in the registry."
+  value       = nonsensitive(jsondecode(data.aws_ssm_parameter.registry.value).environment)
+}

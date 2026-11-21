@@ -10,6 +10,10 @@ import (
 	"time"
 )
 
+type registry map[string]bool
+
+func (r registry) Onboarded(_ context.Context, repo string) (bool, error) { return r[repo], nil }
+
 type tokens struct{ calls int }
 
 func (t *tokens) RepoToken(context.Context, string, string) (string, error) {
@@ -36,8 +40,8 @@ func newBroker(arn, account string) (*Broker, *tokens, *stsTransport) {
 	tk := &tokens{}
 	return &Broker{
 		Prefix: "gha-microvm", Account: "111111111111", Region: "eu-west-1", Partition: "aws",
-		Allowed: map[string]bool{"acme/app": true, "acme/other": true},
-		Tokens:  tk, HTTP: &http.Client{Transport: tr},
+		Registry: registry{"acme/app": true, "acme/other": true},
+		Tokens:   tk, HTTP: &http.Client{Transport: tr},
 		Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Now: time.Now,
 	}, tk, tr
 }

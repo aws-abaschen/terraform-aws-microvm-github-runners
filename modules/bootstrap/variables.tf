@@ -77,20 +77,25 @@ variable "create_github_oidc_provider" {
 variable "repositories" {
   description = <<-EOT
     Repositories onboarded in this account, keyed by owner/repo. Each gets a
-    deploy role (assumable only from the given GitHub Environment) and a
-    permissions boundary that confines it to its own resources and secrets.
+    registry entry and a deploy role (assumable only from the given GitHub
+    Environment) tagged gha-repo-id and gha-repo. The shared boundary confines
+    it to its own resources, to gha/<owner>/<repo>/ secrets and parameters,
+    and to data tagged with its gha-repo-id.
   EOT
   type = map(object({
-    environment            = optional(string, "runners")
-    job_secret_prefixes    = optional(list(string))
-    job_parameter_paths    = optional(list(string))
-    additional_job_actions = optional(list(string), [])
+    environment = optional(string, "runners")
   }))
   default = {}
   validation {
     condition     = alltrue([for k in keys(var.repositories) : can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", k))])
     error_message = "Keys must be owner/repo."
   }
+}
+
+variable "additional_job_actions" {
+  description = "Extra actions on \"*\" allowed to every repository of this account (boundary ceiling, not a grant). Keep it short: the boundary is limited to 6,144 characters."
+  type        = list(string)
+  default     = []
 }
 
 variable "lambda_zip_path" {
@@ -122,7 +127,7 @@ variable "access_logs_bucket" {
 }
 
 variable "permissions_boundary_arn" {
-  description = "Organisation boundary to set on roles this module creates (broker, operator). Per-repo roles get the per-repo boundaries instead."
+  description = "Organisation boundary to set on roles this module creates (broker, operator). Repository roles get the shared repository boundary instead."
   type        = string
   default     = null
 }

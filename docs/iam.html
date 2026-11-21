@@ -23,7 +23,8 @@
 <section>
   <h2><small>IAM design</small>Policies and guardrails that scale with the number of repositories</h2>
   <p class="lead">Design rule: nothing in IAM policies, SCPs, RCPs, key policies or platform configuration grows with the number of repositories. A repository costs a fixed set of roles and resources. Once an account's quotas are reached, you add another account (a cell), not a bigger policy.</p>
-  <span class="tag">Design · 2026-11-21</span>
+  <span class="tag">Phase 1 implemented · 2026-11-21</span>
+  <p>Status: the generic boundary, the registry and <code>org-guardrails</code> are implemented. The boundary is 5,780 characters whatever the number of repositories. IAM Access Analyzer validates the boundary, the SCP and the RCP, and 41 <code>SimulateCustomPolicy</code> cases confirm that repository A gets its own resources and is denied B's and the platform's. They have not yet run in a deployed account. The tagger (phase 2) is not built yet.</p>
 </section>
 
 <section>

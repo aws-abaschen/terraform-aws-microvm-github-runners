@@ -26,9 +26,10 @@
   <table>
     <tr><th>Threat</th><th>Control</th></tr>
     <tr><td>Malicious job (PR author, compromised dependency) persists into later jobs</td><td>One Firecracker VM per job, terminated afterwards, no reuse (ADR-001). JIT runners accept exactly one job.</td></tr>
-    <tr><td>Job reads another repository's secrets</td><td>The runner role is limited to <code>gha/&lt;owner&gt;/&lt;repo&gt;/*</code> and capped by the per-repo boundary. Even a widened identity policy cannot exceed the boundary.</td></tr>
-    <tr><td>Job steals the GitHub App key</td><td>The key is readable only by the broker role. The secret's resource policy denies everyone else, and every repo boundary explicitly denies it.</td></tr>
-    <tr><td>Repository deploy role escalates (new role, removed boundary)</td><td><code>iam:CreateRole</code> requires the repo's own boundary. Removing a boundary, creating policy versions, users or access keys is denied.</td></tr>
+    <tr><td>Job reads another repository's secrets</td><td>The runner role is limited to <code>gha/&lt;owner&gt;/&lt;repo&gt;/*</code> and to data tagged with its <code>gha-repo-id</code>, and capped by the boundary, which scopes everything to the role's own repository tags. Even a widened identity policy cannot exceed the boundary, and the RCP of <code>org-guardrails</code> denies cross-repository access to secrets, queues, tables and logs.</td></tr>
+    <tr><td>Job steals the GitHub App key</td><td>The key is readable only by the broker role. The secret's resource policy denies everyone else, and the boundary explicitly denies it.</td></tr>
+    <tr><td>Repository deploy role escalates (new role, removed boundary)</td><td><code>iam:CreateRole</code> requires the shared boundary, a name of its own and its own repository tags. Removing a boundary, creating policy versions, users or access keys is denied.</td></tr>
+    <tr><td>Repository claims another repository's identity by changing tags</td><td>The boundary and the SCP deny setting or removing <code>gha-repo-id</code> and <code>gha-repo</code> with any value but the caller's own. Only exempt administrators and the tagger can set them. See <a href="iam.html">IAM design</a>.</td></tr>
     <tr><td>Repository asks the broker for another repository's token</td><td>The broker runs the presigned <code>GetCallerIdentity</code> itself (regional STS host only, no SSRF). It requires the role <code>&lt;prefix&gt;-&lt;sha256(repo)[:10]&gt;-control</code> in its own account and an onboarded repository, and scopes the token to that one repository.</td></tr>
     <tr><td>Job kills other runners</td><td>The runner role has no MicroVM permissions. The control role can only <code>Get</code>/<code>Terminate</code> VMs of its own image ARN.</td></tr>
     <tr><td>JIT config replay or theft</td><td>Never in the run payload. Stored as a KMS <code>SecureString</code> under a per-runner name, read and deleted by the VM in <code>/run</code>, and deleted again on cleanup.</td></tr>
@@ -60,6 +61,7 @@
     <li>Prefer <code>webhook_auth_type = "AWS_IAM"</code> behind a central API Gateway with WAF if your SCPs forbid public Function URLs.</li>
     <li>Enable Lambda code signing (<code>code_signing_config_arn</code>) and sign <code>lambda.zip</code> with AWS Signer.</li>
     <li>Set an organisation permissions boundary on the platform roles (<code>permissions_boundary_arn</code>).</li>
+    <li>Attach the SCP, RCP and tag policy of <code>org-guardrails</code> to the runner accounts, on one test account first.</li>
     <li>Rotate the webhook secret by bumping <code>webhook_secret_version</code>. Rotate the GitHub App key yearly in GitHub, then update the secret.</li>
     <li>Install the GitHub App only on onboarded repositories.</li>
   </ul>

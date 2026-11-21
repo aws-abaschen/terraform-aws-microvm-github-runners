@@ -20,7 +20,8 @@ Per-repository ephemeral GitHub Actions runners on AWS Lambda MicroVMs, deployed
 - `cmd/zipdet`: reproducible zips with Unix mode bits (used by every build, also on Windows).
 - `win.just`: PowerShell recipes for Windows (`just win::package`, `just win::sandbox-up …`); no zip and `bash` is WSL there.
 - `internal/`: broker (presigned STS caller check), runner (dispatch + sweep), github, webhook, awsx, obs.
-- `modules/`: `bootstrap` (per account), `runner-image`, `repo-runner` (per repository).
+- `modules/`: `bootstrap` (per account; `bootstrap/policy` renders the generic ABAC boundary), `runner-image`, `repo-runner` (per repository), `org-guardrails` (SCP, RCP, tag policy).
+- IAM design and scaling rules: `docs/iam.html`.
 - `examples/`: `bootstrap-account`, `consumer-repo`, `sandbox`.
 
 ## Checks

@@ -14,7 +14,7 @@ locals {
   account   = data.aws_caller_identity.this.account_id
   region    = data.aws_region.this.region
   partition = data.aws_partition.this.partition
-  boundary  = local.platform.boundaries[local.repo]
+  boundary  = local.platform.boundary_arn
   tags      = merge(var.tags, { "gha-repo" = local.repo, "gha-repo-id" = local.id, "managed-by" = "terraform" })
   key       = "${local.id}/image/${filesha256(var.artifact_path)}.zip"
 }

@@ -38,6 +38,11 @@ func RepoID(repo string) string {
 	return hex.EncodeToString(sum[:])[:10]
 }
 
+// Registry tells whether a repository is onboarded in this account.
+type Registry interface {
+	Onboarded(ctx context.Context, repo string) (bool, error)
+}
+
 // TokenSource mints repository-scoped installation tokens.
 type TokenSource interface {
 	RepoToken(ctx context.Context, owner, repo string) (string, error)
@@ -49,7 +54,7 @@ type Broker struct {
 	Account   string
 	Region    string
 	Partition string
-	Allowed   map[string]bool // lower-case owner/repo
+	Registry  Registry
 	Tokens    TokenSource
 	HTTP      *http.Client
 	Log       *slog.Logger
@@ -68,7 +73,12 @@ func (b *Broker) Handle(ctx context.Context, req Request) (Response, error) {
 		log.Warn("audit: broker denied", "audit", true, "event", "broker.denied", "reason", "bad repository")
 		return Response{}, ErrDenied
 	}
-	if !b.Allowed[repo] {
+	onboarded, err := b.Registry.Onboarded(ctx, repo)
+	if err != nil {
+		log.Error("registry", "err", err)
+		return Response{}, errors.New("registry unavailable")
+	}
+	if !onboarded {
 		log.Warn("audit: broker denied", "audit", true, "event", "broker.denied", "reason", "repository not onboarded")
 		return Response{}, ErrDenied
 	}

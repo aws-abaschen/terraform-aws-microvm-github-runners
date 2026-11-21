@@ -62,7 +62,7 @@ resource "aws_lambda_function" "fn" {
   architectures                  = ["arm64"]
   memory_size                    = each.value.memory
   timeout                        = each.value.timeout
-  reserved_concurrent_executions = each.value.reserve
+  reserved_concurrent_executions = var.reserve_concurrency ? each.value.reserve : -1
   kms_key_arn                    = local.kms
   code_signing_config_arn        = var.code_signing_config_arn
 
