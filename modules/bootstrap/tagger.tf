@@ -93,12 +93,13 @@ data "aws_iam_policy_document" "deploy_entry_trust" {
       variable = "${var.github_oidc_host}:aud"
       values   = ["sts.amazonaws.com"]
     }
-    # Default sub format. An organisation with a customised sub claim must
-    # adapt this pattern; the tagger never reads sub.
+    # Both default subject forms: repo:<owner>/... and the immutable
+    # repo:<owner>@<owner_id>/... that new repositories get. An organisation
+    # with another sub template must adapt this; the tagger never reads sub.
     condition {
       test     = "StringLike"
       variable = "${var.github_oidc_host}:sub"
-      values   = [for o in var.tagger_github_owners : "repo:${o}/*:environment:*"]
+      values   = flatten([for o in var.tagger_github_owners : ["repo:${o}/*:environment:*", "repo:${o}@*/*:environment:*"]])
     }
   }
 }

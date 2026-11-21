@@ -31,8 +31,10 @@ just release-assets   # all assets + SHA256SUMS
 Try it in a single throw-away account (VPC + NAT stand in for the landing zone, ≈ $1–2/day):
 
 ```sh
+export TF_VAR_github_ids='{owner_id=<id>,repository_id=<id>}'   # optional: gh api repos/owner/test-repo --jq '.owner.id,.id'
 just sandbox-up owner/test-repo eu-central-1 false   # false: account already has the GitHub OIDC provider
-just sandbox-smoke eu-central-1                       # one MicroVM, no GitHub needed
+just sandbox-smoke eu-central-1                       # one MicroVM and a forged token to the tagger, no GitHub needed
+just sandbox-e2e owner/test-repo                      # real GitHub OIDC through both deploy paths (test repo needs Actions)
 just sandbox-down owner/test-repo eu-central-1 false
 ```
 

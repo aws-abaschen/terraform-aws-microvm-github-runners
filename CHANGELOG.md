@@ -15,6 +15,7 @@ All notable changes follow [Conventional Commits](https://www.conventionalcommit
 - Module `org-guardrails`: SCP, RCP and tag policy for the repository tags.
 - OIDC deploy roles tagged with the repository.
 - Phase 2 tagger (`bootstrap.tagger_github_owners`): a function that exchanges a GitHub OIDC token for a session of one shared deploy role tagged with the repository, after checking the signature, owner, registry entry, environment and replay. `per_repository_deploy_roles = false` removes the per-repository deploy roles. Example workflow `deploy-runners-tagger.yml`.
+- `just sandbox-e2e`: an end-to-end workflow in the sandbox test repository that checks both deploy paths against real AWS.
 - Alarms, runbooks, resilience drills and DORA mapping.
 - CI (tests, lint, govulncheck, tflint, checkov) and release with SBOM and build provenance.
 
@@ -25,6 +26,9 @@ All notable changes follow [Conventional Commits](https://www.conventionalcommit
 - Platform configuration: `boundary_arn` and `registry_path` replace `boundaries`. The broker reads the registry instead of `ALLOWED_REPOSITORIES`.
 
 ### Fixed
+
+- Bucket policy: `DenyUnencryptedUploads` used `StringNotEqualsIfExists`, which also matches a missing header, so every upload without an explicit `aws:kms` header was denied, Terraform state included. It now denies only a present header other than `aws:kms` (a `Null` test plus `StringNotEquals`). The consumer example drops `encrypt = true`, which sends `AES256`.
+- Deploy role trust: accept GitHub's immutable OIDC subject `repo:<owner>@<owner_id>/<repo>@<repository_id>:...`, the default for new repositories, and pin it exactly with the new `owner_id` and `repository_id` of `bootstrap.repositories`. The tagger checks a pinned `repository_id`.
 
 - Network connector operator role: trust `lambda.amazonaws.com` without `aws:SourceAccount`, which `CreateNetworkConnector` rejects.
 - KMS key policy: allow the Lambda service principal to build and launch MicroVM images; dispatcher gets `kms:ReEncrypt*`.

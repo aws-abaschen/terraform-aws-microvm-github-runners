@@ -53,6 +53,10 @@ sandbox-up repository region="eu-central-1" oidc="true": package (image-artifact
 sandbox-smoke region="eu-central-1":
     $env:GOOS = ''; terraform -chdir={{sandbox}} output -json smoke | go run ./cmd/smoke -region {{region}}
 
+# Run the end-to-end IAM workflow (both deploy paths) from the sandbox test repository, after sandbox-up
+sandbox-e2e repository:
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid()); gh repo clone {{repository}} $tmp -- -q; if ($LASTEXITCODE) { exit 1 };     New-Item -ItemType Directory -Force "$tmp/.github/workflows" | Out-Null; Copy-Item {{sandbox}}/e2e/e2e.yml, {{sandbox}}/e2e/e2e-checks.sh "$tmp/.github/workflows/";     git -C $tmp add -A; git -C $tmp diff --cached --quiet; if ($LASTEXITCODE) { git -C $tmp commit -qm 'ci: e2e workflow'; git -C $tmp push -q; if ($LASTEXITCODE) { exit 1 } };     gh api -X PUT 'repos/{{repository}}/environments/runners' | Out-Null;     $in = terraform -chdir={{sandbox}} output -json e2e_inputs | ConvertFrom-Json; $a = @(); foreach ($p in $in.PSObject.Properties) { $a += '-f'; $a += "$($p.Name)=$($p.Value)" };     gh workflow run e2e.yml --repo {{repository}} @a; if ($LASTEXITCODE) { exit 1 }; Start-Sleep 10;     $id = gh run list --repo {{repository}} --workflow e2e.yml --limit 1 --json databaseId --jq '.[0].databaseId'; gh run watch --repo {{repository}} --exit-status $id
+
 # Destroy everything the sandbox created
 sandbox-down repository region="eu-central-1" oidc="true":
     terraform -chdir={{sandbox}} destroy -input=false -auto-approve '-var=repository={{repository}}' '-var=region={{region}}' '-var=create_github_oidc_provider={{oidc}}'

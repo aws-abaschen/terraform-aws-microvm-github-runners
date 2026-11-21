@@ -1,0 +1,86 @@
+# End-to-end IAM test of both deploy paths, run from the sandbox test
+# repository (copy to .github/workflows/e2e.yml there; `just sandbox-e2e`).
+# Phase 1: the per-repository deploy role through GitHub OIDC.
+# Phase 2: the entry role, then the tagger for the shared deploy role.
+# Each path must reach its own resources and be denied everything else.
+name: e2e
+
+on:
+  workflow_dispatch:
+    inputs:
+      region: { required: true, type: string }
+      deploy_role_arn: { required: true, type: string }
+      entry_role_arn: { required: true, type: string }
+      tagger_function: { required: true, type: string }
+      tfstate_bucket: { required: true, type: string }
+      boundary_arn: { required: true, type: string }
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ${{ inputs.region }}
+  STATE: ${{ inputs.tfstate_bucket }}
+  BOUNDARY: ${{ inputs.boundary_arn }}
+
+jobs:
+  phase1:
+    runs-on: ubuntu-latest
+    environment: runners
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ inputs.deploy_role_arn }}
+          aws-region: ${{ inputs.region }}
+          role-session-name: e2e-phase1-${{ github.run_id }}
+      - name: Checks
+        run: bash .github/workflows/e2e-checks.sh phase1 "${{ inputs.tagger_function }}"
+
+  phase2:
+    runs-on: ubuntu-latest
+    environment: runners
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ inputs.entry_role_arn }}
+          aws-region: ${{ inputs.region }}
+          role-session-name: e2e-entry-${{ github.run_id }}
+      - name: Tagger
+        env:
+          TAGGER: ${{ inputs.tagger_function }}
+        run: |
+          set -euo pipefail
+          idtoken() {
+            curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$1" | jq -r .value
+          }
+          invoke() { # token -> prints errorMessage or OK, writes creds.json
+            jq -n --arg t "$1" '{token: $t}' > req.json
+            aws lambda invoke --function-name "$TAGGER" --cli-binary-format raw-in-base64-out --payload fileb://req.json creds.json > invoke.json
+            if jq -e .FunctionError invoke.json >/dev/null; then jq -r .errorMessage creds.json; else echo OK; fi
+          }
+          fail=0
+          check() { if [ "$2" = "$3" ]; then echo "PASS $1"; else echo "FAIL $1: got $2, want $3"; fail=1; fi; }
+
+          wrong=$(idtoken sts.amazonaws.com); echo "::add-mask::$wrong"
+          check "tagger refuses the sts audience" "$(invoke "$wrong")" denied
+
+          tok=$(idtoken gha-microvm-tagger); echo "::add-mask::$tok"
+          check "tagger issues a session" "$(invoke "$tok")" OK
+          for k in AccessKeyId SecretAccessKey SessionToken; do echo "::add-mask::$(jq -r .$k creds.json)"; done
+          {
+            echo "AWS_ACCESS_KEY_ID=$(jq -r .AccessKeyId creds.json)"
+            echo "AWS_SECRET_ACCESS_KEY=$(jq -r .SecretAccessKey creds.json)"
+            echo "AWS_SESSION_TOKEN=$(jq -r .SessionToken creds.json)"
+          } >> "$GITHUB_ENV"
+          check "tagger refuses a replayed token" "$(invoke "$tok")" denied
+          rm -f req.json creds.json invoke.json
+          exit $fail
+      - name: Checks
+        run: bash .github/workflows/e2e-checks.sh phase2 "${{ inputs.tagger_function }}"

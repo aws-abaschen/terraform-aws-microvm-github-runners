@@ -208,8 +208,16 @@ data "aws_iam_policy_document" "bucket" {
       type        = "*"
       identifiers = ["*"]
     }
+    # Only a wrong header is denied. Without one the bucket default (SSE-KMS
+    # with the platform key) applies. A negated operator alone (with or
+    # without IfExists) also matches a missing header, hence the Null test.
     condition {
-      test     = "StringNotEqualsIfExists"
+      test     = "Null"
+      variable = "s3:x-amz-server-side-encryption"
+      values   = ["false"]
+    }
+    condition {
+      test     = "StringNotEquals"
       variable = "s3:x-amz-server-side-encryption"
       values   = ["aws:kms"]
     }

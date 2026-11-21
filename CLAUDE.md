@@ -40,11 +40,11 @@ Account 067751999967, Region eu-central-1, SSO admin profile. The account alread
 On Windows prefix the sandbox recipes with `win::` (e.g. `just win::sandbox-up …`).
 
 1. `just sandbox-up aws-abaschen/microvm-runner-sandbox eu-central-1 false` (about 15 minutes, the image build is slow).
-2. `just sandbox-smoke eu-central-1`, then read the VM logs (`aws logs tail <log_group> --since 15m`).
+2. `just sandbox-smoke eu-central-1`, then read the VM logs (`aws logs tail <log_group> --since 15m`). Then `just sandbox-e2e aws-abaschen/microvm-runner-sandbox` (real OIDC, both deploy paths).
 3. Status (2026-11-21): smoke test passes (5/5) after fixes to the connector trust, KMS key policy, boundary size and Dockerfile.
    Verified: execution role trust `lambda.amazonaws.com`, run and terminate hooks with `NO_INGRESS`, KMS on `RunMicrovm`, connector operator trust (`lambda.amazonaws.com` only, no `aws:SourceAccount`), IMDS credentials in the VM.
    Still unverified: `RunMicrovm` with the dispatcher's own role (the smoke test runs as admin), dockerd readiness inside the VM, a real job end to end.
-   ABAC boundary (docs/iam.html): smoke test 5/5 again with the tag-scoped roles. Phase 2 tagger built: smoke test 6/6 (tagger fetches the JWKS and refuses a forged token). Unverified: a real workflow through either deploy path (entry role, tagger, shared deploy role), broker registry lookup, org-guardrails attached to an OU.
+   ABAC boundary (docs/iam.html): smoke test 5/5 again with the tag-scoped roles. Phase 2 tagger built: smoke test 6/6. `just sandbox-e2e aws-abaschen/microvm-runner-sandbox` (private test repo, created 2026-11-21; pin ids with `TF_VAR_github_ids='{owner_id=143795778,repository_id=1466740461}'`) passed 37/37 through both deploy paths with real GitHub OIDC. Unverified: CreateMicrovmImage with tags from a deploy session, broker registry lookup, org-guardrails attached to an OU.
 4. Always finish with `just sandbox-down aws-abaschen/microvm-runner-sandbox eu-central-1 false` so nothing keeps costing money (NAT gateway ≈ $1–2/day). Check nothing tagged `purpose=microvm-runner-sandbox` is left.
 5. If the smoke test passes: optional end-to-end test with a GitHub App on a private test repo, then tag `v0.1.0` (the release workflow builds assets, SBOM and provenance).
 

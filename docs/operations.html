@@ -74,7 +74,7 @@
   <h3>Tagger errors</h3>
   <p>The alarm counts denials too: every rejected token is a function error.</p>
   <ol>
-    <li><code>tagger.denied</code> audit events give the reason: <code>token</code> (signature, issuer, audience or expiry; check the workflow asks for audience <code>&lt;prefix&gt;-tagger</code>), <code>owner not allowed</code>, <code>not onboarded</code> (no registry entry), <code>environment mismatch</code> (the job's Environment differs from the registry entry), or <code>replayed jti</code> (a token sent twice: investigate).</li>
+    <li><code>tagger.denied</code> audit events give the reason: <code>token</code> (signature, issuer, audience or expiry; check the workflow asks for audience <code>&lt;prefix&gt;-tagger</code>), <code>owner not allowed</code>, <code>not onboarded</code> (no registry entry), <code>environment mismatch</code> (the job's Environment differs from the registry entry), <code>repository id mismatch</code> (the repository was deleted and recreated: update <code>repository_id</code> in <code>bootstrap.repositories</code> if that is intended), or <code>replayed jti</code> (a token sent twice: investigate).</li>
     <li><code>verifier unavailable</code>: the function can't fetch the GitHub JWKS. Check the central egress path to <code>token.actions.githubusercontent.com</code>.</li>
     <li><code>assume failed</code>: the trust policy of <code>&lt;prefix&gt;-deploy</code> or the SCP rejects the tagger. The SCP must exempt <code>&lt;prefix&gt;-tagger</code> (modules/org-guardrails does).</li>
     <li>CloudTrail: every deploy session carries <code>SourceIdentity=&lt;owner&gt;+&lt;repo&gt;@&lt;run_id&gt;</code>, which stays on all calls made with it.</li>

@@ -29,6 +29,15 @@ variable "repository" {
   type        = string
 }
 
+variable "github_ids" {
+  description = "Optional {owner_id, repository_id} of the test repository (gh api repos/<owner>/<repo> --jq '.owner.id,.id'): pins the deploy role to the immutable OIDC subject."
+  type = object({
+    owner_id      = number
+    repository_id = number
+  })
+  default = null
+}
+
 variable "create_github_oidc_provider" {
   description = "Set false if the account already has the GitHub OIDC provider."
   type        = bool
@@ -127,7 +136,7 @@ module "bootstrap" {
   dynamodb_gateway_route_table_ids = [aws_route_table.private.id]
   lambda_zip_path                  = "${path.module}/../../dist/lambda.zip"
   create_github_oidc_provider      = var.create_github_oidc_provider
-  repositories                     = { (var.repository) = {} }
+  repositories                     = { (var.repository) = var.github_ids == null ? {} : var.github_ids }
   # Phase 2: the tagger and the shared deploy role, next to the phase 1 role.
   tagger_github_owners       = [split("/", var.repository)[0]]
   tagger_deletion_protection = false
@@ -184,5 +193,17 @@ output "smoke" {
     queue_arn       = module.runners.queue_arn
     deploy_role_arn = module.bootstrap.repositories[lower(var.repository)].deploy_role_arn
     tagger_function = module.bootstrap.tagger.function_name
+  }
+}
+
+# Inputs of the end-to-end workflow (e2e/e2e.yml), as `gh workflow run -f` arguments.
+output "e2e_inputs" {
+  value = {
+    region          = var.region
+    deploy_role_arn = module.bootstrap.repositories[lower(var.repository)].deploy_role_arn
+    entry_role_arn  = module.bootstrap.tagger.entry_role_arn
+    tagger_function = module.bootstrap.tagger.function_name
+    tfstate_bucket  = module.bootstrap.tfstate_bucket
+    boundary_arn    = module.bootstrap.repositories[lower(var.repository)].boundary_arn
   }
 }

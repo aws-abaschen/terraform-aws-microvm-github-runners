@@ -17,8 +17,9 @@ terraform {
   }
   # Bucket and key come from the bootstrap outputs (tfstate_bucket, state_key).
   backend "s3" {
-    region       = "eu-west-1"
-    encrypt      = true
+    region = "eu-west-1"
+    # No encrypt = true: it sends AES256, which the bucket denies. Objects get
+    # the bucket default, SSE-KMS with the platform key.
     use_lockfile = true
   }
 }

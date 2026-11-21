@@ -29,6 +29,7 @@ type Claims struct {
 	ID              string   `json:"jti"`
 	Repository      string   `json:"repository"`
 	RepositoryOwner string   `json:"repository_owner"`
+	RepositoryID    string   `json:"repository_id"`
 	Environment     string   `json:"environment"`
 	RunID           string   `json:"run_id"`
 	RunAttempt      string   `json:"run_attempt"`

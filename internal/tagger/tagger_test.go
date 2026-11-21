@@ -58,7 +58,7 @@ func sign(t *testing.T, k keyPair, header, claims map[string]any) string {
 func claims(mod map[string]any) map[string]any {
 	c := map[string]any{
 		"iss": issuer, "aud": aud, "exp": now.Add(5 * time.Minute).Unix(), "nbf": now.Add(-time.Minute).Unix(),
-		"iat": now.Add(-time.Minute).Unix(), "jti": "j-1", "repository": "Acme/App", "repository_owner": "Acme",
+		"iat": now.Add(-time.Minute).Unix(), "jti": "j-1", "repository": "Acme/App", "repository_owner": "Acme", "repository_id": "1001",
 		"environment": "runners", "run_id": "42", "run_attempt": "1", "sub": "repo:Acme/App:environment:runners",
 		"workflow_ref": "Acme/App/.github/workflows/deploy-runners.yml@refs/heads/main",
 	}
@@ -136,7 +136,7 @@ func newFixture(t *testing.T) fixture {
 	return fixture{
 		t: &Tagger{
 			Verifier: v, Owners: []string{"acme"},
-			Registry: registry{"acme/app": {Repository: "acme/app", Environment: "runners"}, "acme/prod": {Repository: "acme/prod", Environment: "production"}},
+			Registry: registry{"acme/app": {Repository: "acme/app", Environment: "runners"}, "acme/prod": {Repository: "acme/prod", Environment: "production"}, "acme/pinned": {Repository: "acme/pinned", Environment: "runners", RepositoryID: "2002"}},
 			Replay:   replay{}, STS: a, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
 		},
 		key: key, sts: a, verify: v,
@@ -201,6 +201,7 @@ func TestDenies(t *testing.T) {
 		{"no environment", nil, nil, map[string]any{"environment": nil}},
 		{"environment mismatch", nil, nil, map[string]any{"repository": "acme/prod", "environment": "runners"}},
 		{"bad repository", nil, nil, map[string]any{"repository": "acme"}},
+		{"recreated repository", nil, nil, map[string]any{"repository": "acme/pinned", "repository_id": "3003"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -218,6 +219,14 @@ func TestDenies(t *testing.T) {
 				t.Fatalf("err %v, assumed %d", err, len(f.sts.got))
 			}
 		})
+	}
+}
+
+func TestPinnedRepositoryID(t *testing.T) {
+	f := newFixture(t)
+	tok := sign(t, f.key, rs256("k1"), claims(map[string]any{"repository": "acme/pinned", "repository_id": "2002"}))
+	if _, err := f.t.Handle(context.Background(), Request{Token: tok}); err != nil {
+		t.Fatal(err)
 	}
 }
 

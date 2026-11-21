@@ -109,6 +109,19 @@ sandbox-up repository region="eu-central-1" oidc="true": package (image-artifact
 sandbox-smoke region="eu-central-1":
     terraform -chdir={{sandbox}} output -json smoke | go run ./cmd/smoke -region {{region}}
 
+# Run the end-to-end IAM workflow (both deploy paths) from the sandbox test repository, after sandbox-up
+sandbox-e2e repository:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tmp=$(mktemp -d); gh repo clone {{repository}} "$tmp" -- -q
+    mkdir -p "$tmp/.github/workflows"; cp {{sandbox}}/e2e/e2e.yml {{sandbox}}/e2e/e2e-checks.sh "$tmp/.github/workflows/"
+    (cd "$tmp" && git add -A && { git diff --cached --quiet || { git commit -qm "ci: e2e workflow" && git push -q; }; })
+    gh api -X PUT "repos/{{repository}}/environments/runners" >/dev/null
+    mapfile -t args < <(terraform -chdir={{sandbox}} output -json e2e_inputs | jq -r 'to_entries[] | "-f", "\(.key)=\(.value)"')
+    gh workflow run e2e.yml --repo {{repository}} "${args[@]}"
+    sleep 10
+    gh run watch --repo {{repository}} --exit-status "$(gh run list --repo {{repository}} --workflow e2e.yml --limit 1 --json databaseId --jq '.[0].databaseId')"
+
 # Destroy everything the sandbox created
 sandbox-down repository region="eu-central-1" oidc="true":
     terraform -chdir={{sandbox}} destroy -input=false -auto-approve -var repository={{repository}} -var region={{region}} -var create_github_oidc_provider={{oidc}}

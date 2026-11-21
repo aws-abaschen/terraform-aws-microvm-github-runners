@@ -81,14 +81,27 @@ variable "repositories" {
     Environment) tagged gha-repo-id and gha-repo. The shared boundary confines
     it to its own resources, to gha/<owner>/<repo>/ secrets and parameters,
     and to data tagged with its gha-repo-id.
+
+    owner_id and repository_id are GitHub's numeric ids (gh api repos/<owner>/<repo>
+    --jq '.owner.id,.id'). When set, the deploy role trusts only the immutable
+    OIDC subject repo:<owner>@<owner_id>/<repo>@<repository_id>:..., and the
+    tagger requires the token's repository_id: a deleted and recreated
+    repository with the same name gets nothing. Without them both subject
+    forms are accepted, with any id.
   EOT
   type = map(object({
-    environment = optional(string, "runners")
+    environment   = optional(string, "runners")
+    owner_id      = optional(number)
+    repository_id = optional(number)
   }))
   default = {}
   validation {
     condition     = alltrue([for k in keys(var.repositories) : can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", k))])
     error_message = "Keys must be owner/repo."
+  }
+  validation {
+    condition     = alltrue([for r in values(var.repositories) : (r.owner_id == null) == (r.repository_id == null)])
+    error_message = "Set both owner_id and repository_id, or neither."
   }
 }
 

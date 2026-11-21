@@ -35,11 +35,17 @@ module "runners_platform" {
   lambda_zip_path = "${path.module}/lambda.zip" # verified release asset
 
   repositories = {
-    "acme/payments-api" = { environment = "runners" }
+    # owner_id and repository_id pin the immutable OIDC subject:
+    # gh api repos/acme/payments-api --jq '.owner.id,.id'
+    "acme/payments-api" = { environment = "runners", owner_id = 1234567, repository_id = 987654321 }
     # Jobs read gha/acme/ledger/* secrets and parameters, plus anything
     # tagged gha-repo-id=<id of acme/ledger>.
     "acme/ledger" = { environment = "runners" }
   }
+
+  # Phase 2: deploys of acme repositories go through the tagger and one shared
+  # deploy role. Set per_repository_deploy_roles = false once all have moved.
+  tagger_github_owners = ["acme"]
 
   alarm_topic_arn    = null # or the topic of your incident management tool
   log_retention_days = 400
@@ -51,4 +57,8 @@ output "repositories" {
 
 output "github_app_secret_arn" {
   value = module.runners_platform.github_app_secret_arn
+}
+
+output "tagger" {
+  value = module.runners_platform.tagger
 }

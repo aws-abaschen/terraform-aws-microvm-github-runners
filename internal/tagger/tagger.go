@@ -33,8 +33,9 @@ type Response struct {
 
 // Entry is a repository's registry record.
 type Entry struct {
-	Repository  string `json:"repository"`
-	Environment string `json:"environment"`
+	Repository   string `json:"repository"`
+	Environment  string `json:"environment"`
+	RepositoryID string `json:"repository_id,omitempty"` // GitHub's numeric id, when pinned
 }
 
 // Registry finds the onboarding record of a repository.
@@ -117,6 +118,9 @@ func (t *Tagger) Handle(ctx context.Context, req Request) (Response, error) {
 	}
 	if c.Environment != entry.Environment {
 		return deny(log, "environment mismatch", nil)
+	}
+	if entry.RepositoryID != "" && entry.RepositoryID != c.RepositoryID {
+		return deny(log, "repository id mismatch", nil)
 	}
 	fresh, err := t.Replay.Claim(ctx, c.ID, time.Unix(c.Expiry, 0))
 	if err != nil {

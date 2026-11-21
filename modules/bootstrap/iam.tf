@@ -9,6 +9,12 @@ locals {
   oidc_provider_arn = "arn:${local.partition}:iam::${local.account}:oidc-provider/${var.github_oidc_host}"
   repo_tags         = { for repo, r in local.repos : repo => { "gha-repo" = repo, "gha-repo-id" = r.id } }
   deploy_repos      = var.per_repository_deploy_roles ? local.repos : {}
+  repo_subjects = {
+    for repo, r in local.repos : repo => r.repository_id == null ? [
+      "repo:${repo}:environment:${r.environment}",
+      "repo:${split("/", repo)[0]}@*/${split("/", repo)[1]}@*:environment:${r.environment}",
+    ] : ["repo:${split("/", repo)[0]}@${r.owner_id}/${split("/", repo)[1]}@${r.repository_id}:environment:${r.environment}"]
+  }
 }
 
 # One generic policy per account (modules/bootstrap/policy). It is BOTH the
@@ -50,14 +56,17 @@ resource "aws_ssm_parameter" "registry" {
   type     = "SecureString"
   key_id   = aws_kms_key.this.arn
   tier     = "Standard"
-  value    = jsonencode({ repository = each.key, environment = each.value.environment })
-  tags     = merge(local.tags, local.repo_tags[each.key])
+  value = jsonencode(merge(
+    { repository = each.key, environment = each.value.environment },
+    each.value.repository_id == null ? {} : { repository_id = tostring(each.value.repository_id) },
+  ))
+  tags = merge(local.tags, local.repo_tags[each.key])
 }
 
 # Phase 1: one deploy role per repository, tagged with it. Phase 2 replaces
 # them with the shared role of tagger.tf (per_repository_deploy_roles = false).
 data "aws_iam_policy_document" "deploy_trust" {
-  # checkov:skip=CKV_AWS_358:aud and sub use StringEquals on one exact repository and environment.
+  # checkov:skip=CKV_AWS_358:sub names one repository and environment; ids are wildcards only when not pinned.
   for_each = local.deploy_repos
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -70,10 +79,12 @@ data "aws_iam_policy_document" "deploy_trust" {
       variable = "${var.github_oidc_host}:aud"
       values   = ["sts.amazonaws.com"]
     }
+    # GitHub's default subject for new repositories is the immutable form
+    # repo:<owner>@<owner_id>/<repo>@<repository_id>:environment:<env>.
     condition {
-      test     = "StringEquals"
+      test     = each.value.repository_id == null ? "StringLike" : "StringEquals"
       variable = "${var.github_oidc_host}:sub"
-      values   = ["repo:${each.key}:environment:${each.value.environment}"]
+      values   = local.repo_subjects[each.key]
     }
   }
 }
