@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # Every job label must be offered by the runner and "microvm" is required.
+    runs-on: [self-hosted, linux, arm64, microvm]
+    timeout-minutes: 60 # matches max_job_minutes; the VM is killed 5 minutes later
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # CI-grade secrets: readable by the ambient runner role under gha/<owner>/<repo>/.
+      - name: Build
+        env:
+          NPM_TOKEN_ID: gha/acme/payments-api/npm-token
+        run: make build
+
+  deploy:
+    # Production credentials come from OIDC bound to a protected Environment,
+    # never from the ambient runner role.
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, linux, arm64, microvm]
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.PROD_DEPLOY_ROLE_ARN }}
+          aws-region: eu-west-1
+      - run: make deploy
