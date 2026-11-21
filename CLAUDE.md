@@ -16,6 +16,8 @@ Per-repository ephemeral GitHub Actions runners on AWS Lambda MicroVMs, deployed
 - `cmd/lambda`: one Go binary, `FUNCTION_ROLE` = webhook | dispatcher | sweeper | broker.
 - `cmd/supervisor`: runs inside the MicroVM (hooks on :9000, reads and deletes the JIT SSM parameter, starts dockerd, runs `run.sh --jitconfig`).
 - `cmd/smoke`: sandbox smoke test, launches one MicroVM like the dispatcher.
+- `cmd/zipdet`: reproducible zips with Unix mode bits (used by every build, also on Windows).
+- `win.just`: PowerShell recipes for Windows (`just win::package`, `just win::sandbox-up …`); no zip and `bash` is WSL there.
 - `internal/`: broker (presigned STS caller check), runner (dispatch + sweep), github, webhook, awsx, obs.
 - `modules/`: `bootstrap` (per account), `runner-image`, `repo-runner` (per repository).
 - `examples/`: `bootstrap-account`, `consumer-repo`, `sandbox`.
@@ -32,6 +34,8 @@ checkov -d modules --framework terraform
 ## Current task: sandbox test in a single account
 
 Account 067751999967, Region eu-central-1, SSO admin profile. The account already has the GitHub OIDC provider, so pass `false` for `oidc`.
+
+On Windows prefix the sandbox recipes with `win::` (e.g. `just win::sandbox-up …`).
 
 1. `just sandbox-up aws-abaschen/microvm-runner-sandbox eu-central-1 false` (about 15 minutes, the image build is slow).
 2. `just sandbox-smoke eu-central-1`, then read the VM logs (`aws logs tail <log_group> --since 15m`).

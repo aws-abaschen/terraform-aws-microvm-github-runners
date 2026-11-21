@@ -9,8 +9,7 @@ flags=(-trimpath -buildvcs=false -ldflags "-s -w -buildid=")
 rm -rf "$dist" && mkdir -p "$dist/lambda" "$dist/cache"
 
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build "${flags[@]}" -o "$dist/lambda/bootstrap" ./cmd/lambda
-touch -d @0 "$dist/lambda/bootstrap"
-(cd "$dist/lambda" && zip -q -X -D ../lambda.zip bootstrap)
+go run ./cmd/zipdet -o "$dist/lambda.zip" -C "$dist/lambda" -x bootstrap bootstrap
 
 version=$(git describe --tags --always)
 for arch in arm64 x64; do
@@ -23,8 +22,7 @@ for arch in arm64 x64; do
   CGO_ENABLED=0 GOOS=linux GOARCH=$goarch go build "${flags[@]}" -o "$out/supervisor" ./cmd/supervisor
   cp image/Dockerfile "$out/Dockerfile"
   echo "runner=$RUNNER_VERSION supervisor=$version" > "$out/VERSION"
-  find "$out" -exec touch -d @0 {} +
-  (cd "$out" && zip -q -X -D "../image-$arch.zip" Dockerfile supervisor actions-runner.tar.gz VERSION)
+  go run ./cmd/zipdet -o "$dist/image-$arch.zip" -C "$out" -x supervisor Dockerfile supervisor actions-runner.tar.gz VERSION
 done
 
 (cd "$dist" && sha256sum lambda.zip image-arm64.zip image-x64.zip > SHA256SUMS && cat SHA256SUMS)

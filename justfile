@@ -1,3 +1,6 @@
+# On Windows use `just win::<task>` (PowerShell 7 recipes in win.just)
+mod win
+
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
 # Pinned GitHub Actions runner. Bump both version and checksums together.
@@ -46,8 +49,7 @@ tf-validate:
 package:
     mkdir -p {{dist}}/lambda
     CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build {{goflags}} -ldflags "{{ldflags}}" -o {{dist}}/lambda/bootstrap ./cmd/lambda
-    touch -d @0 {{dist}}/lambda/bootstrap
-    rm -f {{dist}}/lambda.zip && (cd {{dist}}/lambda && zip -q -X -D ../lambda.zip bootstrap)
+    go run ./cmd/zipdet -o {{dist}}/lambda.zip -C {{dist}}/lambda -x bootstrap bootstrap
     sha256sum {{dist}}/lambda.zip
 
 # Build the MicroVM image artifact: dist/image-<arch>.zip (arch: arm64 | x64)
@@ -67,8 +69,7 @@ image-artifact arch="arm64" docker="true":
     CGO_ENABLED=0 GOOS=linux GOARCH=$goarch go build {{goflags}} -ldflags "{{ldflags}}" -o "$out/supervisor" ./cmd/supervisor
     sed "s/^ARG ENABLE_DOCKER=.*/ARG ENABLE_DOCKER={{docker}}/" image/Dockerfile > "$out/Dockerfile"
     echo "runner={{runner_version}} supervisor=$(git describe --tags --always 2>/dev/null || echo dev)" > "$out/VERSION"
-    find "$out" -exec touch -d @0 {} +
-    rm -f {{dist}}/image-{{arch}}.zip && (cd "$out" && zip -q -X -D ../image-{{arch}}.zip Dockerfile supervisor actions-runner.tar.gz VERSION)
+    go run ./cmd/zipdet -o {{dist}}/image-{{arch}}.zip -C "$out" -x supervisor Dockerfile supervisor actions-runner.tar.gz VERSION
     sha256sum {{dist}}/image-{{arch}}.zip
 
 # Build every release asset and its checksums
