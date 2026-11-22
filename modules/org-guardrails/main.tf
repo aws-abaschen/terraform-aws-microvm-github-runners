@@ -40,6 +40,19 @@ locals {
       }],
       [
         {
+          # A repository can't move a resource that carries another
+          # repository's id: retagging is denied once the tag is set.
+          Sid      = "DenyRetagOtherRepository"
+          Effect   = "Deny"
+          Action   = "*"
+          Resource = "*"
+          Condition = {
+            "ForAnyValue:StringEquals" = { "aws:TagKeys" = local.keys }
+            Null                       = { "aws:ResourceTag/gha-repo-id" = "false", "aws:PrincipalTag/gha-repo-id" = "false" }
+            StringNotEquals            = { "aws:ResourceTag/gha-repo-id" = local.pt["gha-repo-id"] }
+          }
+        },
+        {
           Sid       = "DenyRepoSessionTags"
           Effect    = "Deny"
           Action    = "sts:TagSession"
@@ -126,7 +139,8 @@ resource "aws_organizations_policy" "this" {
 
 resource "aws_organizations_policy_attachment" "this" {
   for_each = var.create ? {
-    for pair in setproduct(keys(local.policies), var.target_ids) : "${pair[0]}:${pair[1]}" => { policy = pair[0], target = pair[1] }
+    # Keyed by position, so targets created in the same apply (unknown ids) work.
+    for pair in setproduct(keys(local.policies), range(length(var.target_ids))) : "${pair[0]}:${pair[1]}" => { policy = pair[0], target = var.target_ids[pair[1]] }
   } : {}
   policy_id = aws_organizations_policy.this[each.value.policy].id
   target_id = each.value.target

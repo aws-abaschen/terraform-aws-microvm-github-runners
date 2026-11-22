@@ -57,3 +57,8 @@ output "tagger" {
     audience        = local.tagger_audience
   } : null
 }
+
+output "platform_dashboard" {
+  description = "CloudWatch dashboard of the whole account: one line per repository (SEARCH), broker, tagger, platform alarms."
+  value       = aws_cloudwatch_dashboard.platform.dashboard_name
+}

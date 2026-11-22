@@ -49,6 +49,22 @@ iam-sim:
     terraform -chdir=tools/iamsim apply -auto-approve -input=false | Out-Null; if ($LASTEXITCODE) { exit 1 }
     $env:GOOS = ''; terraform -chdir=tools/iamsim output -json policies | go run ./cmd/iamsim
 
+# Guardrails live test (management account): enable the policy types, create a member account in its own OU, attach the SCP, RCP and tag policy to that OU
+guardrails-up email:
+    $root = aws organizations list-roots --query 'Roots[0].Id' --output text; foreach ($t in 'SERVICE_CONTROL_POLICY','RESOURCE_CONTROL_POLICY','TAG_POLICY') { aws organizations enable-policy-type --root-id $root --policy-type $t 2>$null | Out-Null };     terraform -chdir=tools/guardrails init -input=false | Out-Null; terraform -chdir=tools/guardrails apply -input=false -auto-approve '-var=account_email={{email}}'
+
+# Run the guardrail checks inside the member account (after guardrails-up)
+guardrails-test:
+    $env:GOOS = ''; go run ./cmd/guardtest -account (terraform -chdir=tools/guardrails output -raw account_id)
+
+# Detach the guardrails from the test OU; the member account stays (no cost)
+guardrails-down email:
+    terraform -chdir=tools/guardrails apply -input=false -auto-approve '-var=account_email={{email}}' '-var=attach=false'
+
+# Close the test member account (AWS keeps it suspended for about 90 days)
+guardrails-close email:
+    terraform -chdir=tools/guardrails destroy -input=false -auto-approve '-var=account_email={{email}}'
+
 # Deploy the sandbox: VPC + NAT, bootstrap, image and one repository (≈ $1–2/day; run sandbox-down after)
 sandbox-up repository region="eu-central-1" oidc="true": package (image-artifact "arm64")
     terraform -chdir={{sandbox}} init -input=false; if ($LASTEXITCODE) { exit 1 }
@@ -62,6 +78,17 @@ sandbox-smoke region="eu-central-1":
 # Run the end-to-end IAM workflow (both deploy paths) from the sandbox test repository, after sandbox-up
 sandbox-e2e repository:
     $tmp = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid()); gh repo clone {{repository}} $tmp -- -q; if ($LASTEXITCODE) { exit 1 };     New-Item -ItemType Directory -Force "$tmp/.github/workflows" | Out-Null; Copy-Item {{sandbox}}/e2e/e2e.yml, {{sandbox}}/e2e/e2e-checks.sh "$tmp/.github/workflows/";     git -C $tmp add -A; git -C $tmp diff --cached --quiet; if ($LASTEXITCODE) { git -C $tmp commit -qm 'ci: e2e workflow'; git -C $tmp push -q; if ($LASTEXITCODE) { exit 1 } };     gh api -X PUT 'repos/{{repository}}/environments/runners' | Out-Null;     $in = terraform -chdir={{sandbox}} output -json e2e_inputs | ConvertFrom-Json; $a = @(); foreach ($p in $in.PSObject.Properties) { $a += '-f'; $a += "$($p.Name)=$($p.Value)" };     gh workflow run e2e.yml --repo {{repository}} @a; if ($LASTEXITCODE) { exit 1 }; Start-Sleep 10;     $id = gh run list --repo {{repository}} --workflow e2e.yml --limit 1 --json databaseId --jq '.[0].databaseId'; gh run watch --repo {{repository}} --exit-status $id
+
+# Store the test GitHub App ({app_id, private_key} from its .pem) in a secret that outlives the sandbox. Run it yourself: the key never passes through anyone else
+sandbox-app-key app_id pem region="eu-central-1":
+    $f = New-TemporaryFile; try { @{ app_id = [int64]'{{app_id}}'; private_key = (Get-Content -Raw '{{pem}}') } | ConvertTo-Json -Compress | Set-Content -NoNewline $f; \
+    $name = 'microvm-runner-sandbox/github-app'; aws secretsmanager describe-secret --region {{region}} --secret-id $name 2>$null | Out-Null; \
+    if ($LASTEXITCODE -eq 0) { aws secretsmanager put-secret-value --region {{region}} --secret-id $name --secret-string "file://$f" | Out-Null } else { aws secretsmanager create-secret --region {{region}} --name $name --description 'Test GitHub App for the MicroVM runners sandbox' --tags Key=purpose,Value=microvm-runner-sandbox-app --secret-string "file://$f" | Out-Null }; \
+    if ($LASTEXITCODE) { exit 1 }; "stored in $name" } finally { Remove-Item $f }
+
+# Real-job test and drills (cmd/realjob): prepare | deploy | webhook | job | drill-capacity | drill-vm-failure | drill-lost-webhooks | unhook | destroy
+sandbox-realjob repository command *flags:
+    $env:GOOS = ''; go run ./cmd/realjob -repo {{repository}} {{flags}} {{command}}
 
 # Destroy everything the sandbox created
 sandbox-down repository region="eu-central-1" oidc="true":

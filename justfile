@@ -105,6 +105,29 @@ iam-sim:
     terraform -chdir=tools/iamsim apply -auto-approve -input=false >/dev/null
     terraform -chdir=tools/iamsim output -json policies | go run ./cmd/iamsim
 
+# Guardrails live test (management account): enable the policy types, create a member account in its own OU, attach the SCP, RCP and tag policy to that OU
+guardrails-up email:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root=$(aws organizations list-roots --query 'Roots[0].Id' --output text)
+    for t in SERVICE_CONTROL_POLICY RESOURCE_CONTROL_POLICY TAG_POLICY; do
+      aws organizations enable-policy-type --root-id "$root" --policy-type "$t" >/dev/null 2>&1 || true
+    done
+    terraform -chdir=tools/guardrails init -input=false >/dev/null
+    terraform -chdir=tools/guardrails apply -input=false -auto-approve -var account_email={{email}}
+
+# Run the guardrail checks inside the member account (after guardrails-up)
+guardrails-test:
+    go run ./cmd/guardtest -account "$(terraform -chdir=tools/guardrails output -raw account_id)"
+
+# Detach the guardrails from the test OU; the member account stays (no cost)
+guardrails-down email:
+    terraform -chdir=tools/guardrails apply -input=false -auto-approve -var account_email={{email}} -var attach=false
+
+# Close the test member account (AWS keeps it suspended for about 90 days)
+guardrails-close email:
+    terraform -chdir=tools/guardrails destroy -input=false -auto-approve -var account_email={{email}}
+
 # Deploy the sandbox: VPC + NAT, bootstrap, image and one repository (≈ $1–2/day; run sandbox-down after)
 sandbox-up repository region="eu-central-1" oidc="true": package (image-artifact "arm64")
     terraform -chdir={{sandbox}} init -input=false
@@ -127,6 +150,24 @@ sandbox-e2e repository:
     gh workflow run e2e.yml --repo {{repository}} "${args[@]}"
     sleep 10
     gh run watch --repo {{repository}} --exit-status "$(gh run list --repo {{repository}} --workflow e2e.yml --limit 1 --json databaseId --jq '.[0].databaseId')"
+
+# Store the test GitHub App ({app_id, private_key} from its .pem) in a secret that outlives the sandbox. Run it yourself: the key never passes through anyone else
+sandbox-app-key app_id pem region="eu-central-1":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    f=$(mktemp); trap 'rm -f "$f"' EXIT
+    jq -n --arg id "{{app_id}}" --rawfile key "{{pem}}" '{app_id: ($id | tonumber), private_key: $key}' > "$f"
+    name=microvm-runner-sandbox/github-app
+    if aws secretsmanager describe-secret --region {{region}} --secret-id "$name" >/dev/null 2>&1; then
+      aws secretsmanager put-secret-value --region {{region}} --secret-id "$name" --secret-string "file://$f" >/dev/null
+    else
+      aws secretsmanager create-secret --region {{region}} --name "$name" --description "Test GitHub App for the MicroVM runners sandbox" --tags Key=purpose,Value=microvm-runner-sandbox-app --secret-string "file://$f" >/dev/null
+    fi
+    echo "stored in $name"
+
+# Real-job test and drills (cmd/realjob): prepare | deploy | webhook | job | drill-capacity | drill-vm-failure | drill-lost-webhooks | unhook | destroy
+sandbox-realjob repository command *flags:
+    go run ./cmd/realjob -repo {{repository}} {{flags}} {{command}}
 
 # Destroy everything the sandbox created
 sandbox-down repository region="eu-central-1" oidc="true":

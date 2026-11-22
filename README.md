@@ -12,7 +12,7 @@ Ephemeral, per-repository GitHub Actions runners on **AWS Lambda MicroVMs**, dep
 
 | Module | Applied by | Purpose |
 |---|---|---|
-| [`modules/bootstrap`](modules/bootstrap) | Platform team, once per account and Region | KMS, buckets, VPC egress connector, optional local endpoints, OIDC, generic ABAC boundary, repository registry and deploy roles, token broker, optional tagger (one shared deploy role) |
+| [`modules/bootstrap`](modules/bootstrap) | Platform team, once per account and Region | KMS, buckets, VPC egress connector, optional local endpoints, OIDC, generic ABAC boundary, repository registry and deploy roles, token broker, optional tagger (one shared deploy role), platform dashboard |
 | [`modules/org-guardrails`](modules/org-guardrails) | Organization admin, once | SCP, RCP and tag policy that make the repository tags trustworthy ([IAM design](https://aws-abaschen.github.io/terraform-aws-microvm-github-runners/iam.html)) |
 | [`modules/runner-image`](modules/runner-image) | Repository workflow | MicroVM image (arm64 or x64) with the pinned runner and Docker |
 | [`modules/repo-runner`](modules/repo-runner) | Repository workflow | Webhook, queue, dispatcher, sweeper, state, runner role, alarms |

@@ -30,6 +30,7 @@
     <tr><td>Audit trail (every launch, termination, rejection, token)</td><td>CloudWatch Logs Insights on <code>/aws/lambda/gha-microvm-*</code>: <code>filter audit = 1 | fields @timestamp, event, job_id, runner_name, microvm_id, actor</code></td></tr>
     <tr><td>Job output inside the VM</td><td><code>/aws/lambda-microvms/gha-microvm-&lt;id&gt;-runtime</code>, one stream per runner</td></tr>
     <tr><td>Image builds</td><td><code>/aws/lambda-microvms/gha-microvm-&lt;id&gt;-build</code></td></tr>
+    <tr><td>Dashboard</td><td><code>gha-microvm-platform</code>: alarms, all repositories, the selected repository, broker and tagger (see <a href="#dashboard">Dashboard</a>)</td></tr>
     <tr><td>Metrics</td><td>Namespace <code>MicrovmGithubRunners</code>, dimension <code>Repository</code></td></tr>
     <tr><td>API calls (who changed what)</td><td>CloudTrail of the account / organisation trail</td></tr>
   </table>
@@ -130,17 +131,29 @@
   </ol>
 </section>
 
+<section id="dashboard">
+  <h2><small>Monitoring</small>Dashboard</h2>
+  <p>One CloudWatch dashboard per account, <code>&lt;prefix&gt;-platform</code>, from <code>bootstrap</code>. Adding a repository needs no dashboard change: the graphs use <code>SEARCH</code>, and the alarm list follows the onboarded repositories.</p>
+  <table>
+    <tr><th>Section</th><th>Widgets</th></tr>
+    <tr><td>Alarms</td><td>Alarm status of the platform (broker, tagger) and of every onboarded repository: dead letters, queue age, sweeper silent, function errors, dispatch and sweep errors, reaped, lost. Built from the alarm-naming convention, 100 alarms per widget.</td></tr>
+    <tr><td>All repositories</td><td>One line per repository: active runners, jobs dispatched, jobs waiting for capacity (<code>Throttled</code>), problems (<code>Lost</code>, <code>Reaped</code>, <code>DispatchErrors</code>, <code>SweepErrors</code>), oldest queued job against the queue-age alarm, function errors.</td></tr>
+    <tr><td>Selected repository</td><td>The <strong>Repository</strong> selector at the top of the dashboard (a dashboard variable on the <code>Repository</code> dimension) picks one repository for two graphs. The first shows active runners and jobs dispatched and completed. The second shows <code>Throttled</code>, <code>Redispatched</code>, <code>IdleTerminated</code>, <code>EndedBySweeper</code>, <code>Lost</code>, <code>Reaped</code>, <code>DispatchErrors</code> and <code>SweepErrors</code>, with the alarm thresholds in its title.</td></tr>
+    <tr><td>Platform functions</td><td>Broker and tagger invocations and errors (tagger errors include refused tokens), their p95 latency, and the account's Lambda concurrency.</td></tr>
+  </table>
+</section>
+
 <section>
   <h2><small>Resilience tests</small>Drills (DORA Art. 24–25)</h2>
   <table>
     <tr><th>Drill</th><th>How</th><th>Expected</th></tr>
-    <tr><td>Lost webhooks</td><td><code>just drill-lost-webhooks &lt;queue_url&gt;</code> while jobs are queued</td><td>Jobs start within 5 minutes through the sweeper</td></tr>
-    <tr><td>VM failure mid-job</td><td>Terminate a running VM by hand</td><td>Job fails in GitHub, <code>Lost</code> metric, re-run succeeds</td></tr>
-    <tr><td>Capacity exhaustion</td><td>Queue more jobs than <code>max_runners</code></td><td>Excess jobs wait, <code>Throttled</code> metric, all complete</td></tr>
+    <tr><td>Lost webhooks</td><td><code>just sandbox-realjob &lt;repo&gt; drill-lost-webhooks</code> (removes the webhook, queues a job, restores it), or <code>just drill-lost-webhooks &lt;queue_url&gt;</code> while jobs are queued</td><td>Jobs start within 5 minutes through the sweeper, <code>Redispatched</code> metric</td></tr>
+    <tr><td>VM failure mid-job</td><td><code>just sandbox-realjob &lt;repo&gt; drill-vm-failure</code>, or terminate a running VM by hand</td><td>Job ends in GitHub, <code>Lost</code> metric, re-run succeeds</td></tr>
+    <tr><td>Capacity exhaustion</td><td><code>just sandbox-realjob &lt;repo&gt; drill-capacity</code>: 7 jobs against <code>max_runners = 5</code></td><td>Excess jobs wait, <code>Throttled</code> metric, all complete</td></tr>
     <tr><td>Broker outage</td><td>Set broker reserved concurrency to 0 for 10 minutes</td><td>Broker and dispatch alarms fire; jobs start after recovery</td></tr>
     <tr><td>Fallback</td><td>Switch one workflow to <code>ubuntu-latest</code></td><td>Builds continue without the platform</td></tr>
   </table>
-  <p>Record date, outcome and follow-ups for each drill in your ICT testing register.</p>
+  <p>Record date, outcome and follow-ups for each drill in your ICT testing register. Last sandbox run (2026-11-22): capacity, VM failure and lost webhooks passed; see <a href="testing.html#realjob">Tests &amp; samples</a>.</p>
 </section>
 
 </main>

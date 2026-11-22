@@ -54,27 +54,43 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: deploy-entry-${{ github.run_id }}
 
+      # Transient tagger errors (GitHub keys, registry or replay store
+      # unreachable) are retried with a fresh token; a denial is not.
       - name: Exchange an OIDC token for the tagged deploy session
         env:
           TAGGER: ${{ vars.RUNNERS_TAGGER_FUNCTION }}
           AUDIENCE: ${{ vars.RUNNERS_TAGGER_AUDIENCE || 'gha-microvm-tagger' }}
         run: |
-          token=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$AUDIENCE" | jq -r .value)
-          echo "::add-mask::$token"
-          jq -n --arg t "$token" '{token: $t}' > req.json
-          aws lambda invoke --function-name "$TAGGER" --cli-binary-format raw-in-base64-out \
-            --payload fileb://req.json creds.json > invoke.json
-          rm -f req.json
-          if jq -e '.FunctionError' invoke.json >/dev/null; then
-            echo "::error::tagger refused: $(jq -r .errorMessage creds.json)"; rm -f creds.json; exit 1
-          fi
-          for k in AccessKeyId SecretAccessKey SessionToken; do echo "::add-mask::$(jq -r .$k creds.json)"; done
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            token=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$AUDIENCE" | jq -r .value)
+            echo "::add-mask::$token"
+            jq -n --arg t "$token" '{token: $t}' > req.json
+            aws lambda invoke --function-name "$TAGGER" --cli-binary-format raw-in-base64-out --payload fileb://req.json creds.json > invoke.json
+            rm -f req.json
+            if ! jq -e .FunctionError invoke.json >/dev/null; then
+              break
+            fi
+            msg=$(jq -r .errorMessage creds.json)
+            rm -f creds.json invoke.json
+            case "$msg" in
+              "verifier unavailable" | "registry unavailable" | "replay store unavailable")
+                if [ "$attempt" -lt 3 ]; then
+                  echo "::warning::tagger: $msg (attempt $attempt), retrying"
+                  sleep $((attempt * 10))
+                  continue
+                fi ;;
+            esac
+            echo "::error::tagger refused: $msg"
+            exit 1
+          done
+          for k in AccessKeyId SecretAccessKey SessionToken; do echo "::add-mask::$(jq -r ".$k" creds.json)"; done
           {
             echo "AWS_ACCESS_KEY_ID=$(jq -r .AccessKeyId creds.json)"
             echo "AWS_SECRET_ACCESS_KEY=$(jq -r .SecretAccessKey creds.json)"
             echo "AWS_SESSION_TOKEN=$(jq -r .SessionToken creds.json)"
           } >> "$GITHUB_ENV"
+          echo "session expires $(jq -r .Expiration creds.json)"
           rm -f creds.json invoke.json
 
       - name: Check the deploy session
@@ -88,8 +104,9 @@ jobs:
         run: |
           terraform -chdir="$TF_DIR" init -input=false \
             -backend-config="bucket=${{ vars.RUNNERS_STATE_BUCKET }}" \
-            -backend-config="key=${{ vars.RUNNERS_STATE_KEY }}"
-          terraform -chdir="$TF_DIR" plan -input=false -out=tfplan
+            -backend-config="key=${{ vars.RUNNERS_STATE_KEY }}" \
+            -backend-config="region=$AWS_REGION"
+          terraform -chdir="$TF_DIR" plan -input=false -var "region=$AWS_REGION" -var "repository=$GITHUB_REPOSITORY" -out=tfplan
           terraform -chdir="$TF_DIR" show -no-color tfplan > "$TF_DIR/plan.txt"
 
       # Change record (DORA Art. 9): the plan applied is the plan archived.

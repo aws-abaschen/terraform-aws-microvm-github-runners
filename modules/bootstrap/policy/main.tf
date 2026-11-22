@@ -81,8 +81,10 @@ data "aws_iam_policy_document" "this" {
     }
   }
   statement {
-    # CreateOwnImage
-    actions   = ["lambda:CreateMicrovmImage"]
+    # CreateOwnImage. Tags at create time are authorised as lambda:TagResource
+    # on "*" (Cloud Control). The SCP stops retagging another repository's
+    # resources; Lambda access itself follows names, not tags.
+    actions   = ["lambda:CreateMicrovmImage", "lambda:TagResource"]
     resources = ["*"]
     condition {
       test     = "StringEquals"
@@ -157,12 +159,12 @@ data "aws_iam_policy_document" "this" {
   }
   statement {
     # OwnArtifactsAndState
-    actions   = ["s3:*Object", "s3:GetObjectVersion", "s3:*ObjectTagging"]
+    actions   = ["s3:*Object", "s3:*ObjectVersion", "s3:*ObjectTagging"] # *ObjectVersion: destroy of a versioned object
     resources = [for b in local.bucket_arns : "${b}/${local.id}/*"]
   }
   statement {
     # ListOwnPrefix
-    actions   = ["s3:ListBucket"]
+    actions   = ["s3:ListBucket", "s3:ListBucketVersions"]
     resources = local.bucket_arns
     condition {
       test     = "StringLike"
@@ -177,7 +179,8 @@ data "aws_iam_policy_document" "this" {
   }
   statement {
     # PlatformKey
-    actions   = ["kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:DescribeKey", "kms:CreateGrant"]
+    # *crypt* = Encrypt, Decrypt, ReEncryptFrom, ReEncryptTo (short: the boundary is near 6,144 characters)
+    actions   = ["kms:*crypt*", "kms:GenerateDataKey*", "kms:DescribeKey", "kms:CreateGrant"]
     resources = [var.kms_key_arn]
   }
   # Actions without resource-level permissions, or read-only.
@@ -185,12 +188,13 @@ data "aws_iam_policy_document" "this" {
     # Unscoped
     actions = [
       "lambda:List*", "lambda:GetAccountSettings", "lambda:GetNetworkConnector", "lambda:PassNetworkConnector", "lambda:GetCodeSigningConfig",
-      "cloudformation:*Resource*", # Cloud Control (awscc provider) and read-only stack resource calls
+      "lambda:GetEventSourceMapping", # has no lambda:FunctionArn key; destroy polls it
+      "cloudformation:*Resource*",    # Cloud Control (awscc provider) and read-only stack resource calls
       "iam:GetPolicy*", "iam:ListPolicyVersions",
       "ssm:DescribeParameters", "secretsmanager:GetRandomPassword", "logs:DescribeLogGroups", "logs:ListTagsForResource",
       "cloudwatch:PutMetricData", "cloudwatch:DescribeAlarms", "xray:PutT*", "sts:GetCallerIdentity",
-      "ec2:CreateNetworkInterface", "ec2:DeleteNetworkInterface", "ec2:*PrivateIpAddresses", # VPC Lambdas
-      "ec2:Describe*",                                                                       # read-only; one wildcard keeps the boundary under 6,144 characters
+      "ec2:*eNetworkInterface", "ec2:*PrivateIpAddresses", # VPC Lambdas: Create and DeleteNetworkInterface
+      "ec2:Describe*",                                     # read-only; one wildcard keeps the boundary under 6,144 characters
     ]
     resources = ["*"]
   }

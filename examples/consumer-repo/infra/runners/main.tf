@@ -15,25 +15,46 @@ terraform {
       version = ">= 3.7, < 4.0"
     }
   }
-  # Bucket and key come from the bootstrap outputs (tfstate_bucket, state_key).
+  # Bucket, key and region come from -backend-config in the deploy workflow
+  # (bootstrap outputs tfstate_bucket and state_key).
   backend "s3" {
-    region = "eu-west-1"
     # No encrypt = true: it sends AES256, which the bucket denies. Objects get
     # the bucket default, SSE-KMS with the platform key.
     use_lockfile = true
   }
 }
 
+variable "region" {
+  type    = string
+  default = "eu-west-1"
+}
+
+variable "repository" {
+  type    = string
+  default = "acme/payments-api"
+}
+
+variable "deletion_protection" {
+  description = "Protect the state table. Disable only for throw-away stacks."
+  type        = bool
+  default     = true
+}
+
+variable "secret_recovery_window_days" {
+  type    = number
+  default = 30
+}
+
 provider "aws" {
-  region = "eu-west-1"
+  region = var.region
 }
 
 provider "awscc" {
-  region = "eu-west-1"
+  region = var.region
 }
 
 locals {
-  repository = "acme/payments-api"
+  repository = var.repository
   # Release assets downloaded and attestation-verified by the deploy workflow.
   release = "${path.module}/.release"
 }
@@ -57,6 +78,9 @@ module "runners" {
 
   max_job_minutes = 60
   max_runners     = 5
+
+  deletion_protection         = var.deletion_protection
+  secret_recovery_window_days = var.secret_recovery_window_days
 }
 
 output "webhook_url" {
@@ -69,4 +93,12 @@ output "webhook_secret_arn" {
 
 output "runner_labels" {
   value = module.runners.runner_labels
+}
+
+output "image_arn" {
+  value = module.image.image_arn
+}
+
+output "queue_arn" {
+  value = module.runners.queue_arn
 }

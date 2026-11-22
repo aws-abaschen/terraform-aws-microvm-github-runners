@@ -9,11 +9,12 @@ on:
   workflow_dispatch:
     inputs:
       region: { required: true, type: string }
-      deploy_role_arn: { required: true, type: string }
+      deploy_role_arn: { required: false, type: string, default: "" } # empty: no per-repository role, phase1 skipped
       entry_role_arn: { required: true, type: string }
       tagger_function: { required: true, type: string }
       tfstate_bucket: { required: true, type: string }
       boundary_arn: { required: true, type: string }
+      artifacts_bucket: { required: false, type: string, default: "" } # unused here; the sandbox passes all its inputs
 
 permissions:
   contents: read
@@ -26,6 +27,7 @@ env:
 
 jobs:
   phase1:
+    if: inputs.deploy_role_arn != ''
     runs-on: ubuntu-latest
     environment: runners
     steps:

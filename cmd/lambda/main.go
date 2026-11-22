@@ -195,7 +195,7 @@ func runTagger(awsCfg aws.Config, log *slog.Logger) {
 	t := &tagger.Tagger{
 		Verifier: &tagger.Verifier{
 			Issuer: env("OIDC_ISSUER"), Audience: env("TAGGER_AUDIENCE"),
-			HTTP: &http.Client{Timeout: 5 * time.Second}, Now: time.Now,
+			HTTP: &http.Client{Timeout: 8 * time.Second}, Now: time.Now, // the first fetch after a cold start can be slow
 		},
 		Owners:   ownerIDs(env("ALLOWED_OWNERS")),
 		Registry: &awsx.Registry{Client: ssm.NewFromConfig(awsCfg), Prefix: env("REGISTRY_PREFIX")},

@@ -1,0 +1,72 @@
+# The test repository deploys its own runners, as a consumer does: the
+# consumer example (infra/runners) applied with a session of the shared deploy
+# role from the tagger, so every call runs under the account boundary.
+# Release assets come from the artifacts bucket (<repo-id>/release/), uploaded
+# by `just sandbox-realjob prepare`, and are read with the deploy session.
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      region: { required: true, type: string }
+      entry_role_arn: { required: true, type: string }
+      tagger_function: { required: true, type: string }
+      tfstate_bucket: { required: true, type: string }
+      artifacts_bucket: { required: true, type: string }
+      action: { required: true, type: choice, options: [apply, destroy], default: apply }
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-runners
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ inputs.region }}
+  TF_DIR: infra/runners
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: runners
+    timeout-minutes: 55 # tagger sessions last one hour
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ inputs.entry_role_arn }}
+          aws-region: ${{ inputs.region }}
+          role-session-name: deploy-entry-${{ github.run_id }}
+      - name: Tagged deploy session
+        run: bash .github/workflows/tagger-login.sh "${{ inputs.tagger_function }}"
+      - name: Release assets from the artifacts bucket
+        run: |
+          id=$(printf %s "${GITHUB_REPOSITORY,,}" | sha256sum | cut -c1-10)
+          echo "REPO_ID=$id" >> "$GITHUB_ENV"
+          aws sts get-caller-identity --query Arn --output text
+          mkdir -p "$TF_DIR/.release"
+          for f in lambda.zip image-arm64.zip; do
+            aws s3 cp "s3://${{ inputs.artifacts_bucket }}/$id/release/$f" "$TF_DIR/.release/$f"
+          done
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.17.2
+          terraform_wrapper: false
+      - name: Terraform ${{ inputs.action }}
+        run: |
+          start=$(date +%s)
+          terraform -chdir="$TF_DIR" init -input=false \
+            -backend-config="bucket=${{ inputs.tfstate_bucket }}" \
+            -backend-config="key=$REPO_ID/runners.tfstate" \
+            -backend-config="region=$AWS_REGION"
+          vars=(-var "region=$AWS_REGION" -var "repository=${GITHUB_REPOSITORY,,}" -var deletion_protection=false -var secret_recovery_window_days=0)
+          if [ "${{ inputs.action }}" = destroy ]; then
+            terraform -chdir="$TF_DIR" destroy -input=false -auto-approve "${vars[@]}"
+          else
+            terraform -chdir="$TF_DIR" apply -input=false -auto-approve "${vars[@]}"
+          fi
+          echo "::notice::terraform ${{ inputs.action }} took $(( $(date +%s) - start ))s"

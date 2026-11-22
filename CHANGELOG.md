@@ -2,10 +2,15 @@
 
 All notable changes follow [Conventional Commits](https://www.conventionalcommits.org) and [Semantic Versioning](https://semver.org).
 
-## [Unreleased]
+## [0.1.0] - 2026-11-22
 
 ### Added
 
+- Monitoring dashboard `<prefix>-platform` in `bootstrap`, one per account. It shows the alarm status of the platform and of every onboarded repository, and one line per repository through CloudWatch SEARCH: runners, jobs, capacity, problems, queue age and function errors. A Repository selector drives the detail of one repository. It also covers the broker, the tagger and the account's Lambda concurrency.
+- The tagger allows 8 s to fetch GitHub's keys (cold start), and the tagger workflows retry its transient errors with a fresh token.
+- Real-job test and drills (`cmd/realjob`, `just sandbox-realjob`): the test repository deploys and destroys its own runners through the tagger, then runs real jobs, a capacity drill, a VM-failure drill and a lost-webhooks drill. The sandbox gains `runners_deployed_by`, `per_repository_deploy_roles` and `github_app_source_secret` (copied with an ephemeral read and a write-only argument). `just sandbox-app-key` stores the test App outside the sandbox.
+- Live guardrails test (`tools/guardrails`, `cmd/guardtest`, `just guardrails-up|test|down|close`): a member account in its own OU with the SCP, RCP and tag policy attached.
+- `AGENTS.md` replaces `CLAUDE.md`.
 - Go Lambda binary (webhook, dispatcher, sweeper, token broker) and in-VM supervisor.
 - Terraform modules `bootstrap`, `runner-image`, `repo-runner`.
 - MicroVM image with pinned GitHub Actions runner 2.338.2 (arm64 and x64) and Docker.
@@ -29,6 +34,9 @@ All notable changes follow [Conventional Commits](https://www.conventionalcommit
 
 ### Fixed
 
+- Boundary, found by deploying and destroying as the repository: `lambda:TagResource` for create-time tags (with the own-id condition), `lambda:GetEventSourceMapping`, and `s3:ListBucketVersions` and `s3:*ObjectVersion` on the repository's own prefix. The SCP gains `DenyRetagOtherRepository`.
+- `org-guardrails`: policy attachments are keyed by position, so targets created in the same apply work.
+- Consumer example: region, repository, `deletion_protection` and `secret_recovery_window_days` are variables; the backend region comes from `-backend-config`.
 - Bucket policy: `DenyUnencryptedUploads` used `StringNotEqualsIfExists`, which also matches a missing header, so every upload without an explicit `aws:kms` header was denied, Terraform state included. It now denies only a present header other than `aws:kms` (a `Null` test plus `StringNotEquals`). The consumer example drops `encrypt = true`, which sends `AES256`.
 - Deploy role trust: support GitHub's immutable OIDC subject `repo:<owner>@<owner_id>/<repo>@<repository_id>:...`, the default for new repositories, through the new `owner_id` and `repository_id` of `bootstrap.repositories` (exact match; Access Analyzer rejects a wildcard id). The tagger checks a pinned `repository_id`.
 - `tagger_github_owners` is a map of owner to numeric owner id (was a list): the entry role trusts `repo:<owner>@<id>/*` and the tagger checks `repository_owner_id`.

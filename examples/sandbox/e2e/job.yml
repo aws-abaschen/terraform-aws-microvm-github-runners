@@ -1,0 +1,48 @@
+# Real jobs on the repository's MicroVM runners (just sandbox-realjob job and
+# the drills). `count` parallel jobs, each sleeping `sleep` seconds.
+name: job
+
+on:
+  workflow_dispatch:
+    inputs:
+      count: { required: false, type: number, default: 1 }
+      sleep: { required: false, type: number, default: 0 }
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - id: m
+        run: echo "matrix=$(jq -cn --argjson n ${{ inputs.count }} '[range(1; $n + 1)]')" >> "$GITHUB_OUTPUT"
+
+  run:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        n: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: [self-hosted, linux, arm64, microvm]
+    timeout-minutes: 10
+    steps:
+      - name: Where am I
+        run: |
+          echo "runner=$RUNNER_NAME job=${{ matrix.n }}"
+          uname -a
+          grep -E '^(NAME|VERSION)=' /etc/os-release
+          nproc; free -m | head -2
+      - name: Ambient runner role (IMDSv2)
+        run: |
+          t=$(curl -fsS -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60')
+          echo "role: $(curl -fsS -H "X-aws-ec2-metadata-token: $t" http://169.254.169.254/latest/meta-data/iam/security-credentials/)"
+      - name: Docker
+        run: |
+          docker version --format '{{.Server.Version}}'
+          docker run --rm public.ecr.aws/docker/library/hello-world:latest
+      - name: Sleep
+        if: inputs.sleep > 0
+        run: sleep ${{ inputs.sleep }}
